@@ -1,0 +1,65 @@
+# IDEs and editors
+.vscode/
+.idea/
+*.iml
+
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Test coverage reports
+.coverage
+.tox/
+.htmlcov/
+.profileraw/
+
+# Logs and databases
+*.log
+*.sql
+*.sqlite
+
+# Configuration files
+.env
+.env.example
+*.ini
+
+# Virtual environment
+venv/
+
+# FastAPI specific
+*.pkl
+*.db
+
+# Sensitive files
+*.key
+*.pem
+
+# Documentation
+docs/_build/
+
+# Node.js and frontend build artifacts (if you're using them)
+node_modules/
+npm-debug.log
+yarn-error.log
+
+# Miscellaneous
+.DS_Store
+*.swp
+*.swo
