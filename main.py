@@ -3,8 +3,8 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Depends
 from sqlalchemy.orm import Session
 
-from app.database.session import get_db, engine
-from app.database.models import Base, User, Role
+from database.session import get_db, engine
+from database.models import Base, User, Role
 
 
 async def create_db_and_tables():
