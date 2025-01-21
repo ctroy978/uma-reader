@@ -10,6 +10,8 @@ class User(Base, TimestampMixin, SoftDeleteMixin):
 
     # Core fields
     email: Mapped[str] = Column(String(255), unique=True, nullable=False, index=True)
+    username: Mapped[str] = Column(String(50), unique=True, nullable=False, index=True)
+    full_name: Mapped[str] = Column(String(100), nullable=False)
     role_name: Mapped[str] = Column(
         String(50), ForeignKey("role.role_name"), nullable=False
     )
@@ -41,6 +43,33 @@ class User(Base, TimestampMixin, SoftDeleteMixin):
 
         return email.lower()  # Store emails in lowercase
 
+    @validates("username")
+    def validate_username(self, key, username):
+        """Validate username format"""
+        if not username:
+            raise ValueError("Username cannot be empty")
+
+        # Username format validation: letters, numbers, underscore, 3-50 chars
+        pattern = r"^[a-zA-Z0-9_]{3,50}$"
+        if not re.match(pattern, username):
+            raise ValueError(
+                "Username must be 3-50 characters and contain only letters, numbers, and underscores"
+            )
+
+        return username.lower()  # Store usernames in lowercase
+
+    @validates("full_name")
+    def validate_full_name(self, key, full_name):
+        """Validate full name"""
+        if not full_name:
+            raise ValueError("Full name cannot be empty")
+
+        if len(full_name) > 100:
+            raise ValueError("Full name must be less than 100 characters")
+
+        # Remove excessive whitespace and capitalize properly
+        return " ".join(full_name.split())
+
     @validates("role_name")
     def validate_role(self, key, role_name):
         """Validate role assignment"""
@@ -50,7 +79,7 @@ class User(Base, TimestampMixin, SoftDeleteMixin):
         return role_name
 
     def __str__(self) -> str:
-        return f"{self.email} ({self.role_name})"
+        return f"{self.username} ({self.email}) - {self.role_name}"
 
 
 # SQLAlchemy event listeners for additional validation/processing
@@ -66,3 +95,17 @@ def lowercase_email_update(mapper, connection, target):
     """Ensure email is lowercase before update"""
     if target.email:
         target.email = target.email.lower()
+
+
+@event.listens_for(User, "before_insert")
+def lowercase_username_insert(mapper, connection, target):
+    """Ensure username is lowercase before insert"""
+    if target.username:
+        target.username = target.username.lower()
+
+
+@event.listens_for(User, "before_update")
+def lowercase_username_update(mapper, connection, target):
+    """Ensure username is lowercase before update"""
+    if target.username:
+        target.username = target.username.lower()

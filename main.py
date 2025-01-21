@@ -5,11 +5,16 @@ from sqlalchemy.orm import Session
 
 from database.session import get_db, engine
 from database.models import Base, User, Role
+from verification.session import engine as verification_engine
+from verification.base import Base as VerificationBase
+
+from routers import auth
 
 
 async def create_db_and_tables():
     """Create database tables if they don't exist"""
     Base.metadata.create_all(bind=engine)
+    VerificationBase.metadata.create_all(bind=verification_engine)
 
 
 async def setup_initial_data():
@@ -26,14 +31,16 @@ async def setup_initial_data():
                 Role(role_name="STUDENT", description="Can take assessments"),
             ]
             db.add_all(roles)
+            db.commit()  # Commit roles first
 
         # Check if admin user exists
         admin_user = db.query(User).join(Role).filter(Role.role_name == "ADMIN").first()
         if not admin_user:
             admin_user = User(
                 email="admin@example.com",
+                username="admin",
+                full_name="System Administrator",
                 role_name="ADMIN",
-                # Add other required fields
             )
             db.add(admin_user)
 
@@ -57,6 +64,8 @@ async def lifespan(app: FastAPI):
 
 # Create FastAPI app with lifespan
 app = FastAPI(lifespan=lifespan)
+
+app.include_router(auth.router)
 
 
 @app.get("/health")

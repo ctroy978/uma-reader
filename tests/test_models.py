@@ -13,28 +13,99 @@ from database.models import (
 class TestUser:
     def test_user_creation(self, db_session):
         """Test creating a new user"""
-        user = User(email="new_student@example.com", role_name="STUDENT")
+        user = User(
+            email="new_student@example.com",
+            username="newstudent",
+            full_name="New Student",
+            role_name="STUDENT",
+        )
         db_session.add(user)
         db_session.commit()
 
         assert user.id is not None
         assert user.email == "new_student@example.com"
+        assert user.username == "newstudent"
+        assert user.full_name == "New Student"
         assert user.role_name == "STUDENT"
         assert not user.is_deleted
 
     def test_invalid_email(self, db_session):
         """Test email validation"""
         with pytest.raises(ValueError):
-            User(email="invalid-email", role_name="STUDENT")
+            User(
+                email="invalid-email",
+                username="testuser",
+                full_name="Test User",
+                role_name="STUDENT",
+            )
 
     def test_invalid_role(self, db_session):
         """Test role validation"""
         with pytest.raises(ValueError):
-            User(email="test@example.com", role_name="INVALID_ROLE")
+            User(
+                email="test@example.com",
+                username="testuser",
+                full_name="Test User",
+                role_name="INVALID_ROLE",
+            )
+
+    def test_invalid_username(self, db_session):
+        """Test username validation"""
+        # Test too short username
+        with pytest.raises(ValueError):
+            User(
+                email="test@example.com",
+                username="ab",  # Too short
+                full_name="Test User",
+                role_name="STUDENT",
+            )
+
+        # Test invalid characters
+        with pytest.raises(ValueError):
+            User(
+                email="test@example.com",
+                username="test@user",  # Contains @
+                full_name="Test User",
+                role_name="STUDENT",
+            )
+
+        # Test too long username
+        with pytest.raises(ValueError):
+            User(
+                email="test@example.com",
+                username="a" * 51,  # 51 characters
+                full_name="Test User",
+                role_name="STUDENT",
+            )
+
+    def test_invalid_full_name(self, db_session):
+        """Test full name validation"""
+        # Test empty full name
+        with pytest.raises(ValueError):
+            User(
+                email="test@example.com",
+                username="testuser",
+                full_name="",  # Empty
+                role_name="STUDENT",
+            )
+
+        # Test too long full name
+        with pytest.raises(ValueError):
+            User(
+                email="test@example.com",
+                username="testuser",
+                full_name="A" * 101,  # 101 characters
+                role_name="STUDENT",
+            )
 
     def test_soft_delete(self, db_session):
         """Test soft delete functionality"""
-        user = User(email="to_delete@example.com", role_name="STUDENT")
+        user = User(
+            email="to_delete@example.com",
+            username="deleteuser",
+            full_name="Delete User",
+            role_name="STUDENT",
+        )
         db_session.add(user)
         db_session.commit()
 

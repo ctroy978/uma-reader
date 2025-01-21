@@ -140,7 +140,12 @@ def test_user(db_session):
     """Create a test user"""
     from database.models import User
 
-    user = User(email="test@example.com", role_name="STUDENT")
+    user = User(
+        email="test@example.com",
+        username="teststudent",
+        full_name="Test Student",
+        role_name="STUDENT",
+    )
     db_session.add(user)
     db_session.commit()
     return user
@@ -151,7 +156,12 @@ def test_teacher(db_session):
     """Create a test teacher"""
     from database.models import User
 
-    teacher = User(email="teacher@example.com", role_name="TEACHER")
+    teacher = User(
+        email="teacher@example.com",
+        username="testteacher",
+        full_name="Test Teacher",
+        role_name="TEACHER",
+    )
     db_session.add(teacher)
     db_session.commit()
     return teacher
