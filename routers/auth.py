@@ -18,11 +18,19 @@ from verification.models import OTPVerification, VerificationType
 router = APIRouter(prefix="/auth", tags=["authentication"])
 
 
-# Pydantic models for request validation
 class InitialRegistration(BaseModel):
     username: str
     email: EmailStr
     full_name: str
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "username": "johndoe",
+                "email": "john@example.com",
+                "full_name": "John Doe",
+            }
+        }
 
 
 class CompleteRegistration(BaseModel):

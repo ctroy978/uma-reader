@@ -2,6 +2,7 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy import Column, String, DateTime, Boolean, Enum
 from sqlalchemy.orm import Mapped
 import enum
+import uuid
 from ..base import Base, TimestampMixin
 
 
@@ -13,12 +14,11 @@ class VerificationType(enum.Enum):
 
 
 class OTPVerification(Base, TimestampMixin):
-    """Stores temporary verification codes for both registration and login"""
-
     __tablename__ = "otp_verifications"
 
-    # Core fields
-    id: Mapped[str] = Column(String(36), primary_key=True)
+    id: Mapped[str] = Column(
+        String(36), primary_key=True, default=lambda: str(uuid.uuid4())
+    )
     email: Mapped[str] = Column(String(255), nullable=False, index=True)
     verification_code: Mapped[str] = Column(String(8), nullable=False)
     verification_type: Mapped[VerificationType] = Column(

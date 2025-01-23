@@ -1,7 +1,10 @@
 # app/main.py
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Depends
+from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
+from dotenv import load_dotenv
+import os
 
 from database.session import get_db, engine
 from database.models import Base, User, Role
@@ -9,6 +12,8 @@ from verification.session import engine as verification_engine
 from verification.base import Base as VerificationBase
 
 from routers import auth
+
+load_dotenv()
 
 
 async def create_db_and_tables():
@@ -66,6 +71,20 @@ async def lifespan(app: FastAPI):
 app = FastAPI(lifespan=lifespan)
 
 app.include_router(auth.router)
+
+
+origins = [
+    os.getenv("FRONTEND_URL", "http://localhost:5173"),
+    # Add more origins as needed
+]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 @app.get("/health")
