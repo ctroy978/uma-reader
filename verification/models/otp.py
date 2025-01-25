@@ -34,10 +34,14 @@ class OTPVerification(Base, TimestampMixin):
     def is_valid(self) -> bool:
         """Check if the verification code is still valid"""
         now = datetime.now(timezone.utc)
-        return not self.is_used and now <= self.expires_at
+        expires_at = (
+            self.expires_at.replace(tzinfo=timezone.utc)
+            if self.expires_at.tzinfo is None
+            else self.expires_at
+        )
+        return not self.is_used and now <= expires_at
 
     def use_code(self) -> None:
-        """Mark the verification code as used"""
         self.is_used = True
 
     def __str__(self) -> str:

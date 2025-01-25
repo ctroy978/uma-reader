@@ -37,6 +37,7 @@ class CompleteRegistration(BaseModel):
     username: str
     email: EmailStr
     verification_code: str
+    full_name: str
 
 
 # Email configuration (move to config file in production)
@@ -151,12 +152,15 @@ async def complete_registration(
     verification_db.commit()
 
     # Check if this is the first admin
-    is_admin = registration.email == os.getenv("FIRST_ADMIN_EMAIL")
+    is_admin = registration.email == os.getenv("INITIAL_ADMIN_EMAIL")
     role_name = "ADMIN" if is_admin else "STUDENT"
 
     # Create user
     new_user = User(
-        username=registration.username, email=registration.email, role_name=role_name
+        username=registration.username,
+        email=registration.email,
+        full_name=registration.full_name,  # Add this
+        role_name=role_name,
     )
 
     db.add(new_user)

@@ -23,36 +23,19 @@ async def create_db_and_tables():
 
 
 async def setup_initial_data():
-    """Initialize reference data and admin user if needed"""
+    """Initialize reference data"""
     db = next(get_db())
     try:
-        # Check if admin role exists
+        # Create roles if they don't exist
         admin_role = db.query(Role).filter(Role.role_name == "ADMIN").first()
         if not admin_role:
-            # Create roles
             roles = [
                 Role(role_name="ADMIN", description="System administrator"),
                 Role(role_name="TEACHER", description="Can create and manage texts"),
                 Role(role_name="STUDENT", description="Can take assessments"),
             ]
             db.add_all(roles)
-            db.commit()  # Commit roles first
-
-        # Check if admin user exists
-        admin_user = db.query(User).join(Role).filter(Role.role_name == "ADMIN").first()
-        if not admin_user:
-            admin_user = User(
-                email="admin@example.com",
-                username="admin",
-                full_name="System Administrator",
-                role_name="ADMIN",
-            )
-            db.add(admin_user)
-
-        db.commit()
-    except Exception as e:
-        db.rollback()
-        raise e
+            db.commit()
     finally:
         db.close()
 
