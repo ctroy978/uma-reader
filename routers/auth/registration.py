@@ -1,21 +1,19 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Request, Response
 from sqlalchemy.orm import Session
-from sqlalchemy import select
 from pydantic import BaseModel, EmailStr
-from fastapi_mail import FastMail, MessageSchema, ConnectionConfig
 import os
-from dotenv import load_dotenv
-
-# Load environment variables
-load_dotenv()
 from typing import Annotated
+import random
+import string
 
 from database.session import get_db
 from verification.session import get_verification_db
-from database.models import User, Role
+from database.models import User
 from verification.models import OTPVerification, VerificationType
+from .email import send_registration_email
+from auth.jwt_utils import create_access_token
 
-router = APIRouter(prefix="/auth", tags=["authentication"])
+router = APIRouter(tags=["Authentication"])
 
 
 class InitialRegistration(BaseModel):
@@ -40,71 +38,26 @@ class CompleteRegistration(BaseModel):
     full_name: str
 
 
-# Email configuration (move to config file in production)
-conf = ConnectionConfig(
-    MAIL_USERNAME=os.getenv("MAIL_USERNAME"),
-    MAIL_PASSWORD=os.getenv("MAIL_PASSWORD"),
-    MAIL_FROM=os.getenv("MAIL_USERNAME"),
-    MAIL_PORT=587,
-    MAIL_SERVER="smtp.gmail.com",
-    MAIL_STARTTLS=True,
-    MAIL_SSL_TLS=False,
-    USE_CREDENTIALS=True,
-)
-
-fastmail = FastMail(conf)
-
-
-async def send_registration_email(email: str, otp: str, full_name: str):
-    """Send registration verification email"""
-    message = MessageSchema(
-        subject="Complete Your Registration",
-        recipients=[email],
-        body=f"""
-        <html>
-            <body>
-                <h2>Welcome to Student Reader, {full_name}!</h2>
-                <p>Your registration verification code is: <strong>{otp}</strong></p>
-                <p>This code will expire in 10 minutes.</p>
-                <p>If you didn't request this registration, please ignore this email.</p>
-            </body>
-        </html>
-        """,
-        subtype="html",
-    )
-    await fastmail.send_message(message)
-
-
 @router.post("/register/initiate")
 async def initiate_registration(
     registration: InitialRegistration,
     db: Annotated[Session, Depends(get_db)],
     verification_db: Annotated[Session, Depends(get_verification_db)],
 ):
-    """Start the registration process"""
-    # Check if email already exists
-    existing_user = db.query(User).filter(User.email == registration.email).first()
-    if existing_user:
+    # Check existing email
+    if db.query(User).filter(User.email == registration.email).first():
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail="Email already registered"
         )
 
-    # Check if username already exists
-    existing_username = (
-        db.query(User).filter(User.username == registration.username).first()
-    )
-    if existing_username:
+    # Check existing username
+    if db.query(User).filter(User.username == registration.username).first():
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail="Username already taken"
         )
 
-    # Generate OTP
-    import random
-    import string
-
+    # Generate and store OTP
     otp = "".join(random.choices(string.digits, k=6))
-
-    # Store OTP
     verification = OTPVerification(
         email=registration.email,
         verification_code=otp,
@@ -128,8 +81,7 @@ async def complete_registration(
     db: Annotated[Session, Depends(get_db)],
     verification_db: Annotated[Session, Depends(get_verification_db)],
 ):
-    """Complete the registration process"""
-    # Verify OTP
+    # Verify OTP - original logic
     verification = (
         verification_db.query(OTPVerification)
         .filter(
@@ -151,7 +103,7 @@ async def complete_registration(
     verification.use_code()
     verification_db.commit()
 
-    # Check if this is the first admin
+    # Check if first admin
     is_admin = registration.email == os.getenv("INITIAL_ADMIN_EMAIL")
     role_name = "ADMIN" if is_admin else "STUDENT"
 
@@ -159,7 +111,7 @@ async def complete_registration(
     new_user = User(
         username=registration.username,
         email=registration.email,
-        full_name=registration.full_name,  # Add this
+        full_name=registration.full_name,
         role_name=role_name,
     )
 
@@ -167,8 +119,14 @@ async def complete_registration(
     db.commit()
     db.refresh(new_user)
 
+    # Generate access token - only new code addition
+    access_token = create_access_token(new_user)
+
+    # Return response with token - modified return
     return {
         "message": "Registration successful",
         "user_id": new_user.id,
         "role": role_name,
+        "access_token": access_token,
+        "token_type": "Bearer",
     }

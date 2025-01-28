@@ -2,6 +2,7 @@ import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from database.base import Base
+from verification.base import Base as VerificationBase
 from database.models import (
     Role,
     TextForm,
@@ -34,99 +35,111 @@ def db_session(engine, tables):
     Session = sessionmaker(bind=connection)
     session = Session()
 
-    # Insert reference data
-    roles = [
-        Role(role_name="STUDENT", description="Student role"),
-        Role(role_name="TEACHER", description="Teacher role"),
-        Role(role_name="ADMIN", description="Admin role"),
-    ]
+    # Insert reference data only if not exists
+    if not session.query(Role).first():
+        roles = [
+            Role(role_name="STUDENT", description="Student role"),
+            Role(role_name="TEACHER", description="Teacher role"),
+            Role(role_name="ADMIN", description="Admin role"),
+        ]
+        session.add_all(roles)
+        session.commit()
 
-    text_forms = [
-        TextForm(form_name="PROSE", description="Standard written text"),
-        TextForm(form_name="POETRY", description="Verse format"),
-        TextForm(form_name="DRAMA", description="Script/dialogue format"),
-        TextForm(form_name="OTHER", description="Alternative text formats"),
-    ]
+    if not session.query(TextForm).first():
+        text_forms = [
+            TextForm(form_name="PROSE", description="Standard written text"),
+            TextForm(form_name="POETRY", description="Verse format"),
+            TextForm(form_name="DRAMA", description="Script/dialogue format"),
+            TextForm(form_name="OTHER", description="Alternative text formats"),
+        ]
+        session.add_all(text_forms)
+        session.commit()
 
-    primary_types = [
-        PrimaryType(type_name="NARRATIVE", description="Story-based text"),
-        PrimaryType(type_name="INFORMATIONAL", description="Factual content"),
-        PrimaryType(type_name="PERSUASIVE", description="Argumentative text"),
-        PrimaryType(type_name="OTHER", description="Alternative text types"),
-    ]
+    if not session.query(PrimaryType).first():
+        primary_types = [
+            PrimaryType(type_name="NARRATIVE", description="Story-based text"),
+            PrimaryType(type_name="INFORMATIONAL", description="Factual content"),
+            PrimaryType(type_name="PERSUASIVE", description="Argumentative text"),
+            PrimaryType(type_name="OTHER", description="Alternative text types"),
+        ]
+        session.add_all(primary_types)
+        session.commit()
 
-    question_categories = [
-        QuestionCategory(
-            category_name="literal_basic",
-            description="Basic fact recall",
-            progression_order=1,
-        ),
-        QuestionCategory(
-            category_name="literal_detailed",
-            description="Detailed fact recall",
-            progression_order=2,
-        ),
-        QuestionCategory(
-            category_name="vocabulary_context",
-            description="Word meaning in context",
-            progression_order=3,
-        ),
-        QuestionCategory(
-            category_name="inferential_simple",
-            description="Basic conclusions",
-            progression_order=4,
-        ),
-        QuestionCategory(
-            category_name="inferential_complex",
-            description="Complex conclusions",
-            progression_order=5,
-        ),
-        QuestionCategory(
-            category_name="structural_basic",
-            description="Basic text structure",
-            progression_order=6,
-        ),
-        QuestionCategory(
-            category_name="structural_advanced",
-            description="Advanced text structure",
-            progression_order=7,
-        ),
-    ]
+    if not session.query(QuestionCategory).first():
+        question_categories = [
+            QuestionCategory(
+                category_name="literal_basic",
+                description="Basic fact recall",
+                progression_order=1,
+            ),
+            QuestionCategory(
+                category_name="literal_detailed",
+                description="Detailed fact recall",
+                progression_order=2,
+            ),
+            QuestionCategory(
+                category_name="vocabulary_context",
+                description="Word meaning in context",
+                progression_order=3,
+            ),
+            QuestionCategory(
+                category_name="inferential_simple",
+                description="Basic conclusions",
+                progression_order=4,
+            ),
+            QuestionCategory(
+                category_name="inferential_complex",
+                description="Complex conclusions",
+                progression_order=5,
+            ),
+            QuestionCategory(
+                category_name="structural_basic",
+                description="Basic text structure",
+                progression_order=6,
+            ),
+            QuestionCategory(
+                category_name="structural_advanced",
+                description="Advanced text structure",
+                progression_order=7,
+            ),
+        ]
+        session.add_all(question_categories)
+        session.commit()
 
-    question_difficulties = [
-        QuestionDifficulty(
-            difficulty_name="basic", description="Entry level questions", level_value=1
-        ),
-        QuestionDifficulty(
-            difficulty_name="intermediate",
-            description="Medium complexity",
-            level_value=2,
-        ),
-        QuestionDifficulty(
-            difficulty_name="advanced", description="High complexity", level_value=3
-        ),
-    ]
+    if not session.query(QuestionDifficulty).first():
+        question_difficulties = [
+            QuestionDifficulty(
+                difficulty_name="basic",
+                description="Entry level questions",
+                level_value=1,
+            ),
+            QuestionDifficulty(
+                difficulty_name="intermediate",
+                description="Medium complexity",
+                level_value=2,
+            ),
+            QuestionDifficulty(
+                difficulty_name="advanced", description="High complexity", level_value=3
+            ),
+        ]
+        session.add_all(question_difficulties)
+        session.commit()
 
-    genres = [
-        Genre(genre_name="FANTASY", description="Imaginative fiction"),
-        Genre(genre_name="MYTHOLOGY", description="Traditional stories"),
-        Genre(genre_name="REALISTIC", description="True-to-life fiction"),
-        Genre(genre_name="HISTORICAL", description="Based on history"),
-        Genre(genre_name="TECHNICAL", description="Specialized/technical content"),
-        Genre(genre_name="BIOGRAPHY", description="Life stories"),
-        Genre(genre_name="ADVENTURE", description="Action-based stories"),
-        Genre(genre_name="MYSTERY", description="Problem-solving stories"),
-        Genre(genre_name="NONFICTION", description="Factual content"),
-        Genre(genre_name="OTHER", description="Miscellaneous genres"),
-    ]
-
-    session.add_all(roles)
-    session.add_all(text_forms)
-    session.add_all(primary_types)
-    session.add_all(question_categories)
-    session.add_all(question_difficulties)
-    session.add_all(genres)
-    session.commit()
+    if not session.query(Genre).first():
+        genres = [
+            Genre(genre_name="FANTASY", description="Imaginative fiction"),
+            Genre(genre_name="MYTHOLOGY", description="Traditional stories"),
+            Genre(genre_name="REALISTIC", description="True-to-life fiction"),
+            Genre(genre_name="HISTORICAL", description="Based on history"),
+            Genre(genre_name="TECHNICAL", description="Specialized/technical content"),
+            Genre(genre_name="BIOGRAPHY", description="Life stories"),
+            Genre(genre_name="ADVENTURE", description="Action-based stories"),
+            Genre(genre_name="MYSTERY", description="Problem-solving stories"),
+            Genre(genre_name="NONFICTION", description="Factual content"),
+            Genre(genre_name="OTHER", description="Miscellaneous genres"),
+        ]
+        session.add_all(genres)
+        session.commit()
 
     yield session
 
@@ -139,10 +152,12 @@ def db_session(engine, tables):
 def test_user(db_session):
     """Create a test user"""
     from database.models import User
+    import uuid
 
+    unique_id = str(uuid.uuid4())[:8]
     user = User(
-        email="test@example.com",
-        username="teststudent",
+        email=f"test{unique_id}@example.com",
+        username=f"teststudent{unique_id}",
         full_name="Test Student",
         role_name="STUDENT",
     )
@@ -165,3 +180,11 @@ def test_teacher(db_session):
     db_session.add(teacher)
     db_session.commit()
     return teacher
+
+
+@pytest.fixture(scope="function")
+def db_session_with_verification(db_session, engine):
+    """Create verification tables in test database"""
+    VerificationBase.metadata.create_all(engine)
+    yield db_session
+    VerificationBase.metadata.drop_all(engine)

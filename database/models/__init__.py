@@ -12,6 +12,7 @@ from database.models.user import User
 from database.models.text import Text, Chunk
 from database.models.assessment import ActiveAssessment
 from database.models.completion import Completion, CompletionQuestion
+from .token import RefreshToken
 
 # List all models for easy access
 __all__ = [
@@ -27,4 +28,5 @@ __all__ = [
     "ActiveAssessment",
     "Completion",
     "CompletionQuestion",
+    "RefreshToken",
 ]

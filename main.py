@@ -11,7 +11,10 @@ from database.models import Base, User, Role
 from verification.session import engine as verification_engine
 from verification.base import Base as VerificationBase
 
-from routers import auth
+from routers.auth.login import router as login_router
+from routers.auth.registration import router as registration_router
+from routers.auth.token import router as token_router
+
 
 load_dotenv()
 
@@ -53,7 +56,9 @@ async def lifespan(app: FastAPI):
 # Create FastAPI app with lifespan
 app = FastAPI(lifespan=lifespan)
 
-app.include_router(auth.router)
+app.include_router(login_router, prefix="/auth")
+app.include_router(registration_router, prefix="/auth")
+app.include_router(token_router, prefix="/auth")
 
 
 origins = [
