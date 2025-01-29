@@ -37,10 +37,33 @@ class UserRoleUpdate(BaseModel):
 # Routes
 @router.get("/", response_model=List[UserResponse])
 async def get_users(
-    db: Annotated[Session, Depends(get_db)], _: Annotated[User, Depends(require_admin)]
+    db: Annotated[Session, Depends(get_db)],
+    _: Annotated[User, Depends(require_admin)],
+    role: str = None,
+    status: str = None,
+    search: str = None,
 ):
-    """Get all users including soft-deleted ones"""
-    users = db.query(User).all()
+    """Get users with optional filters"""
+    query = db.query(User)
+
+    if role:
+        query = query.filter(User.role_name == role)
+    if status:
+        if status == "active":
+            query = query.filter(User.is_deleted == False)
+        elif status == "deleted":
+            query = query.filter(User.is_deleted == True)
+    if search:
+        search_term = f"%{search}%"
+        query = query.filter(
+            or_(
+                User.username.ilike(search_term),
+                User.email.ilike(search_term),
+                User.full_name.ilike(search_term),
+            )
+        )
+
+    users = query.all()
     return users
 
 
