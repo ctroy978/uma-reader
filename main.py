@@ -15,6 +15,7 @@ from routers.auth.login import router as login_router
 from routers.auth.registration import router as registration_router
 from routers.auth.token import router as token_router
 from routers.admin.users import router as user_router
+from routers.teacher.texts import router as text_router
 
 
 load_dotenv()
@@ -61,6 +62,7 @@ app.include_router(login_router, prefix="/auth")
 app.include_router(registration_router, prefix="/auth")
 app.include_router(token_router, prefix="/auth")
 app.include_router(user_router, prefix="/admin")
+app.include_router(text_router, prefix="/teacher")
 
 
 origins = [
