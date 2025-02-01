@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status, Form
+from fastapi import APIRouter, Depends, HTTPException, status, Form, Query
 from sqlalchemy.orm import Session
 from typing import List, Optional, Set, Tuple
 from pydantic import BaseModel, constr, confloat, Field
@@ -512,3 +512,88 @@ async def update_text(
     except SQLAlchemyError as e:
         db.rollback()
         raise HTTPException(status_code=500, detail="Database error occurred")
+
+
+def require_roles(allowed_roles: List[str]):
+    async def role_checker(current_user=Depends(get_current_user)):
+        if current_user.role_name not in allowed_roles:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient permissions"
+            )
+        return current_user
+
+    return role_checker
+
+
+@router.delete("/{text_id}", status_code=status.HTTP_200_OK)
+async def delete_text(
+    text_id: str,
+    force: bool = Query(False, description="Force delete even with active assessments"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_teacher),
+):
+    """Soft delete a text and its associated chunks"""
+
+    # Get the text and verify ownership
+    text = (
+        db.query(Text)
+        .filter(
+            Text.id == text_id,
+            Text.teacher_id == current_user.id,
+            Text.is_deleted == False,
+        )
+        .first()
+    )
+
+    if not text:
+        raise HTTPException(status_code=404, detail="Text not found")
+
+    # Check for active assessments if not forced
+    if not force:
+        active_assessments = (
+            db.query(ActiveAssessment)
+            .filter(
+                ActiveAssessment.text_id == text_id,
+                ActiveAssessment.is_active == True,
+                ActiveAssessment.completed == False,
+            )
+            .count()
+        )
+
+        if active_assessments > 0:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "message": f"Text has {active_assessments} active assessments",
+                    "active_assessments": active_assessments,
+                },
+            )
+
+    try:
+        # Start transaction
+        # Soft delete text
+        text.soft_delete()
+
+        # Soft delete associated chunks
+        db.query(Chunk).filter(
+            Chunk.text_id == text_id, Chunk.is_deleted == False
+        ).update({"is_deleted": True})
+
+        # If forced, mark active assessments as completed
+        if force:
+            db.query(ActiveAssessment).filter(
+                ActiveAssessment.text_id == text_id,
+                ActiveAssessment.is_active == True,
+                ActiveAssessment.completed == False,
+            ).update({"is_active": False, "completed": True})
+
+        db.commit()
+
+        return {"message": "Text successfully deleted"}
+
+    except SQLAlchemyError as e:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Database error occurred while deleting text",
+        )
