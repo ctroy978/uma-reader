@@ -405,14 +405,14 @@ class TextUpdateRequest(BaseModel):
 @router.put("/{text_id}", response_model=TextResponse)
 async def update_text(
     text_id: str,
-    update_data: TextUpdateRequest,
+    content: str = Form(...),
+    force: bool = Form(False),
     db: Session = Depends(get_db),
     current_user: User = Depends(require_teacher),
 ):
-    """Update a text and its chunks, handling active assessments"""
-    # Start transaction
+    """Update text content and handle chunk replacement"""
     try:
-        # Verify text exists and belongs to teacher
+        # Get the text
         text = (
             db.query(Text)
             .filter(
@@ -427,8 +427,8 @@ async def update_text(
             raise HTTPException(status_code=404, detail="Text not found")
 
         # Check for active assessments if not forced
-        if not update_data.force:
-            active_count = (
+        if not force:
+            active_assessments = (
                 db.query(ActiveAssessment)
                 .filter(
                     ActiveAssessment.text_id == text_id,
@@ -438,25 +438,21 @@ async def update_text(
                 .count()
             )
 
-            if active_count > 0:
+            if active_assessments > 0:
                 raise HTTPException(
-                    status_code=status.HTTP_409_CONFLICT,
-                    detail=f"Text has {active_count} active assessments. Set force=true to proceed.",
+                    status_code=409,
+                    detail=f"Text has {active_assessments} active assessments",
                 )
 
-        # Process the new content
-        try:
-            title, chunks = TextProcessor.extract_title_and_chunks(update_data.content)
-            avg_unit_length = TextProcessor.determine_avg_unit_length(chunks)
-        except ValueError as e:
-            raise HTTPException(status_code=400, detail=str(e))
+        # Process the XML content
+        title, chunks = TextProcessor.extract_title_and_chunks(content)
 
-        # Soft delete active assessments
-        db.query(ActiveAssessment).filter(
-            ActiveAssessment.text_id == text_id,
-            ActiveAssessment.is_active == True,
-            ActiveAssessment.completed == False,
-        ).update({"is_active": False, "completed": True})
+        # Calculate average unit length for chunks
+        avg_unit_length = TextProcessor.determine_avg_unit_length(chunks)
+
+        # Start database transaction
+        text.title = title
+        text.avg_unit_length = avg_unit_length
 
         # Soft delete existing chunks
         db.query(Chunk).filter(
@@ -487,28 +483,23 @@ async def update_text(
 
             previous_chunk = current_chunk
 
-        # Update text metadata
-        text.title = title
-        text.grade_level = update_data.metadata.grade_level
-        text.form_name = update_data.metadata.form.value
-        text.type_name = update_data.metadata.primary_type.value
-        text.avg_unit_length = avg_unit_length
-
-        # Update genres
-        text.genres = []  # Clear existing genres
-        for genre_name in update_data.metadata.genres:
-            genre = db.query(Genre).filter(Genre.genre_name == genre_name.value).first()
-            if genre:
-                text.genres.append(genre)
+        # Soft delete active assessments if forced
+        if force:
+            db.query(ActiveAssessment).filter(
+                ActiveAssessment.text_id == text_id,
+                ActiveAssessment.is_active == True,
+                ActiveAssessment.completed == False,
+            ).update({"is_active": False, "completed": True})
 
         db.commit()
 
+        # Return updated text response
         return TextResponse(
             id=text.id,
             title=title,
-            grade_level=update_data.metadata.grade_level,
-            form=update_data.metadata.form,
-            primary_type=update_data.metadata.primary_type,
+            grade_level=text.grade_level,
+            form=text.form_name,
+            primary_type=text.type_name,
             genres=[genre.genre_name for genre in text.genres],
             chunk_count=len(chunks),
             avg_unit_length=avg_unit_length,
@@ -516,8 +507,8 @@ async def update_text(
             updated_at=text.updated_at,
         )
 
-    except Exception as e:
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except SQLAlchemyError as e:
         db.rollback()
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)
-        )
+        raise HTTPException(status_code=500, detail="Database error occurred")
