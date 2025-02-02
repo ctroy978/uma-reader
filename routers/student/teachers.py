@@ -3,6 +3,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 from typing import List, Optional
 from pydantic import BaseModel
+from enum import Enum
 
 from database.session import get_db
 from database.models import User, Text, Role
@@ -133,13 +134,26 @@ class TextListPaginatedResponse(BaseModel):
 
 
 # Get teacher's texts with filtering
+class TextSortField(str, Enum):
+    TITLE = "title"
+    GRADE_LEVEL = "grade_level"
+    CREATED_AT = "created_at"
+
+
+class SortOrder(str, Enum):
+    ASC = "asc"
+    DESC = "desc"
+
+
 @router.get("/{teacher_id}/texts", response_model=TextListPaginatedResponse)
 async def list_teacher_texts(
     teacher_id: str,
+    title_search: Optional[str] = Query(None, description="Search text by title"),
     grade_level: Optional[int] = Query(None, ge=2, le=12),
-    form: Optional[str] = Query(None),
-    primary_type: Optional[str] = Query(None),
-    genres: Optional[List[str]] = Query(None),
+    sort_by: TextSortField = Query(
+        TextSortField.CREATED_AT, description="Field to sort by"
+    ),
+    sort_order: SortOrder = Query(SortOrder.DESC, description="Sort order"),
     page: int = Query(1, ge=1),
     per_page: int = Query(20, ge=1, le=100),
     db: Session = Depends(get_db),
@@ -167,25 +181,24 @@ async def list_teacher_texts(
     )
 
     # Apply filters
+    if title_search:
+        query = query.filter(Text.title.ilike(f"%{title_search}%"))
+
     if grade_level is not None:
         query = query.filter(Text.grade_level == grade_level)
-
-    if form is not None:
-        query = query.filter(Text.form_name == form)
-
-    if primary_type is not None:
-        query = query.filter(Text.type_name == primary_type)
-
-    if genres:
-        for genre in genres:
-            query = query.filter(Text.genres.any(Genre.genre_name == genre))
 
     # Get total count before pagination
     total = query.count()
 
-    # Apply pagination
+    # Determine sort column and order
+    sort_column = getattr(Text, sort_by.value)
+    sort_func = (
+        sort_column.desc() if sort_order == SortOrder.DESC else sort_column.asc()
+    )
+
+    # Apply pagination and sorting
     offset = (page - 1) * per_page
-    texts = query.order_by(Text.created_at.desc()).offset(offset).limit(per_page).all()
+    texts = query.order_by(sort_func).offset(offset).limit(per_page).all()
 
     return TextListPaginatedResponse(
         texts=[
