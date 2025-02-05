@@ -18,7 +18,7 @@ from routers.admin.users import router as user_router
 from routers.teacher.texts import router as text_router
 from routers.student.teachers import router as student_teachers_router
 from routers.auth.logout import router as logout_router
-
+from routers.student.assessment import router as assessment_router
 
 load_dotenv()
 
@@ -67,6 +67,7 @@ app.include_router(user_router, prefix="/admin")
 app.include_router(text_router, prefix="/teacher")
 app.include_router(student_teachers_router, prefix="/student/teachers")
 app.include_router(logout_router, prefix="/auth")
+app.include_router(assessment_router)
 
 
 origins = [
