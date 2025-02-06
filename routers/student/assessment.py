@@ -10,7 +10,7 @@ from database.session import get_db
 from database.models import Text, Chunk, ActiveAssessment, User
 from auth.middleware import require_user
 
-router = APIRouter(prefix="/assessment", tags=["Assessment"])
+router = APIRouter(tags=["Assessment"])
 
 
 class ChunkResponse(BaseModel):
@@ -23,12 +23,20 @@ class ChunkResponse(BaseModel):
         from_attributes = True
 
 
-@router.post("/start/{text_id}", response_model=ChunkResponse)
+class StartAssessmentResponse(BaseModel):
+    assessment_id: str
+    chunk: ChunkResponse
+
+    class Config:
+        from_attributes = True
+
+
+@router.post("/start/{text_id}", response_model=StartAssessmentResponse)
 async def start_assessment(
     text_id: str,
     request: Request,
     db: Session = Depends(get_db),
-    user: User = Depends(require_user),  # This handles both STUDENT and TEACHER roles
+    user: User = Depends(require_user),
 ):
     """Start a new assessment for a text and return the first chunk"""
 
@@ -37,19 +45,6 @@ async def start_assessment(
     if not text:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Text not found"
-        )
-
-    # Get the first chunk
-    first_chunk = (
-        db.query(Chunk)
-        .filter(
-            Chunk.text_id == text_id, Chunk.is_first == True, Chunk.is_deleted == False
-        )
-        .first()
-    )
-    if not first_chunk:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Text has no content"
         )
 
     # Check for existing active assessment
@@ -69,15 +64,31 @@ async def start_assessment(
         existing_assessment.last_activity = datetime.now(timezone.utc)
         db.commit()
 
-        # Return the current chunk if assessment exists
+        # Get current chunk for existing assessment
         current_chunk = db.query(Chunk).get(existing_assessment.current_chunk_id)
         if current_chunk:
-            return ChunkResponse(
-                id=current_chunk.id,
-                content=current_chunk.content,
-                is_first=current_chunk.is_first,
-                has_next=current_chunk.next_chunk_id is not None,
+            return StartAssessmentResponse(
+                assessment_id=existing_assessment.id,
+                chunk=ChunkResponse(
+                    id=current_chunk.id,
+                    content=current_chunk.content,
+                    is_first=current_chunk.is_first,
+                    has_next=current_chunk.next_chunk_id is not None,
+                ),
             )
+
+    # If no existing assessment, get the first chunk
+    first_chunk = (
+        db.query(Chunk)
+        .filter(
+            Chunk.text_id == text_id, Chunk.is_first == True, Chunk.is_deleted == False
+        )
+        .first()
+    )
+    if not first_chunk:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Text has no content"
+        )
 
     # Create new assessment
     assessment = ActiveAssessment(
@@ -91,10 +102,71 @@ async def start_assessment(
     db.add(assessment)
     db.commit()
 
-    # Return the first chunk
+    # Return both assessment ID and first chunk
+    return StartAssessmentResponse(
+        assessment_id=assessment.id,
+        chunk=ChunkResponse(
+            id=first_chunk.id,
+            content=first_chunk.content,
+            is_first=True,
+            has_next=first_chunk.next_chunk_id is not None,
+        ),
+    )
+
+
+@router.get("/next/{assessment_id}", response_model=ChunkResponse)
+async def get_next_chunk(
+    assessment_id: str,
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_user),
+):
+    """Get next chunk in reading sequence"""
+
+    # Get active assessment
+    assessment = (
+        db.query(ActiveAssessment)
+        .filter(
+            ActiveAssessment.id == assessment_id,
+            ActiveAssessment.student_id == user.id,
+            ActiveAssessment.is_active == True,
+            ActiveAssessment.completed == False,
+        )
+        .first()
+    )
+
+    if not assessment:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Active assessment not found"
+        )
+
+    # Get current chunk
+    current_chunk = db.query(Chunk).get(assessment.current_chunk_id)
+    if not current_chunk:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Current chunk not found"
+        )
+
+    # Get next chunk
+    if not current_chunk.next_chunk_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="No next chunk available"
+        )
+
+    next_chunk = db.query(Chunk).get(current_chunk.next_chunk_id)
+    if not next_chunk:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Next chunk not found"
+        )
+
+    # Update assessment's current chunk
+    assessment.current_chunk_id = next_chunk.id
+    assessment.last_activity = datetime.now(timezone.utc)
+    db.commit()
+
     return ChunkResponse(
-        id=first_chunk.id,
-        content=first_chunk.content,
-        is_first=True,
-        has_next=first_chunk.next_chunk_id is not None,
+        id=next_chunk.id,
+        content=next_chunk.content,
+        is_first=next_chunk.is_first,
+        has_next=next_chunk.next_chunk_id is not None,
     )

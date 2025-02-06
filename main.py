@@ -67,7 +67,7 @@ app.include_router(user_router, prefix="/admin")
 app.include_router(text_router, prefix="/teacher")
 app.include_router(student_teachers_router, prefix="/student/teachers")
 app.include_router(logout_router, prefix="/auth")
-app.include_router(assessment_router)
+app.include_router(assessment_router, prefix="/assessment")
 
 
 origins = [
