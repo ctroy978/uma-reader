@@ -13,6 +13,9 @@ from auth.middleware import require_user
 router = APIRouter(tags=["Assessment"])
 
 
+# In assessment.py
+
+
 class ChunkResponse(BaseModel):
     id: str
     content: str
@@ -25,6 +28,7 @@ class ChunkResponse(BaseModel):
 
 class StartAssessmentResponse(BaseModel):
     assessment_id: str
+    text_title: str  # Add text title to the response
     chunk: ChunkResponse
 
     class Config:
@@ -69,6 +73,7 @@ async def start_assessment(
         if current_chunk:
             return StartAssessmentResponse(
                 assessment_id=existing_assessment.id,
+                text_title=text.title,  # Include text title
                 chunk=ChunkResponse(
                     id=current_chunk.id,
                     content=current_chunk.content,
@@ -102,9 +107,10 @@ async def start_assessment(
     db.add(assessment)
     db.commit()
 
-    # Return both assessment ID and first chunk
+    # Return assessment ID, text title, and first chunk
     return StartAssessmentResponse(
         assessment_id=assessment.id,
+        text_title=text.title,  # Include text title
         chunk=ChunkResponse(
             id=first_chunk.id,
             content=first_chunk.content,
