@@ -20,6 +20,7 @@ from routers.student.teachers import router as student_teachers_router
 from routers.auth.logout import router as logout_router
 from routers.student.assessment import router as assessment_router
 from routers.student.questions import router as questions_router
+from routers.student.evaluation import router as evaluation_router
 
 load_dotenv()
 
@@ -59,7 +60,7 @@ async def lifespan(app: FastAPI):
 
 
 # Create FastAPI app with lifespan
-app = FastAPI(lifespan=lifespan)
+app = FastAPI(lifespan=lifespan, debug=True)
 
 app.include_router(login_router, prefix="/auth")
 app.include_router(registration_router, prefix="/auth")
@@ -70,6 +71,7 @@ app.include_router(student_teachers_router, prefix="/student/teachers")
 app.include_router(logout_router, prefix="/auth")
 app.include_router(assessment_router, prefix="/assessment")
 app.include_router(questions_router, prefix="/questions")
+app.include_router(evaluation_router, prefix="/evaluation")
 
 
 origins = [
