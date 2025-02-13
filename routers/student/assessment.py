@@ -176,3 +176,30 @@ async def get_next_chunk(
         is_first=next_chunk.is_first,
         has_next=next_chunk.next_chunk_id is not None,
     )
+
+
+@router.get("/status/{text_id}", response_model=dict)
+async def get_assessment_status(
+    text_id: str,
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_user),
+):
+    """Check if student has an active assessment for this text"""
+
+    # Check for existing active assessment
+    active_assessment = (
+        db.query(ActiveAssessment)
+        .filter(
+            ActiveAssessment.student_id == user.id,
+            ActiveAssessment.text_id == text_id,
+            ActiveAssessment.is_active == True,
+            ActiveAssessment.completed == False,
+        )
+        .first()
+    )
+
+    return {
+        "has_active_assessment": active_assessment is not None,
+        "assessment_id": active_assessment.id if active_assessment else None,
+    }
