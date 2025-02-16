@@ -26,6 +26,20 @@ class Completion(Base, TimestampMixin, SoftDeleteMixin):
         String(36), ForeignKey("activeassessment.id"), nullable=False
     )
 
+    # Test state tracking
+    test_status: Mapped[str] = Column(
+        String(20), nullable=False, default="pending", server_default="pending"
+    )
+
+    # Timestamps for test progression
+    completion_triggered_at: Mapped[datetime] = Column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+    )
+    test_started_at: Mapped[datetime] = Column(DateTime(timezone=True), nullable=True)
+    completed_at: Mapped[datetime] = Column(DateTime(timezone=True), nullable=True)
+
     # Final assessment state
     final_test_level: Mapped[str] = Column(
         String(50), ForeignKey("questioncategory.category_name"), nullable=False
@@ -33,7 +47,6 @@ class Completion(Base, TimestampMixin, SoftDeleteMixin):
     final_test_difficulty: Mapped[str] = Column(
         String(50), ForeignKey("questiondifficulty.difficulty_name"), nullable=False
     )
-    completed_at: Mapped[datetime] = Column(DateTime(timezone=True), nullable=True)
 
     # Performance metrics
     overall_score: Mapped[float] = Column(Float, nullable=False, default=0.0)
@@ -103,8 +116,30 @@ class Completion(Base, TimestampMixin, SoftDeleteMixin):
         ),
     )
 
-    def __str__(self) -> str:
-        return f"Completion {self.id} - Score: {self.overall_score}%"
+    @validates("test_status")
+    def validate_test_status(self, key, value):
+        """Validate test status is one of the allowed values"""
+        allowed_statuses = {"pending", "in_progress", "completed"}
+        if value not in allowed_statuses:
+            raise ValueError(
+                f"Invalid test status. Must be one of: {', '.join(allowed_statuses)}"
+            )
+        return value
+
+    def start_test(self) -> None:
+        """Mark the test as started"""
+        if self.test_status != "pending":
+            raise ValueError("Can only start tests that are pending")
+        self.test_status = "in_progress"
+        self.test_started_at = datetime.now(timezone.utc)
+
+    def complete_test(self) -> None:
+        """Mark the test as completed and calculate final scores"""
+        if self.test_status != "in_progress":
+            raise ValueError("Can only complete tests that are in progress")
+        self.test_status = "completed"
+        self.completed_at = datetime.now(timezone.utc)
+        self.calculate_overall_score()
 
     def calculate_overall_score(self) -> None:
         """Calculate overall score from category success rates"""
@@ -113,11 +148,8 @@ class Completion(Base, TimestampMixin, SoftDeleteMixin):
         else:
             self.overall_score = 0.0
 
-    def mark_completed(self) -> None:
-        """Mark the completion as finished and calculate final scores"""
-        if not self.completed_at:
-            self.completed_at = datetime.now(timezone.utc)
-            self.calculate_overall_score()
+    def __str__(self) -> str:
+        return f"Completion {self.id} - Status: {self.test_status}"
 
 
 class CompletionQuestion(Base, TimestampMixin):
@@ -148,7 +180,7 @@ class CompletionQuestion(Base, TimestampMixin):
     completion = relationship("Completion", back_populates="questions")
     next_question = relationship(
         "CompletionQuestion",
-        remote_side="[CompletionQuestion.id]",  # Use string reference
+        remote_side="[CompletionQuestion.id]",
         uselist=False,
         backref="previous_question",
         post_update=True,

@@ -1,4 +1,4 @@
-# app/api/endpoints/assessment.py
+# routers/student/assessment.py
 
 from fastapi import APIRouter, Depends, HTTPException, status, Request
 from sqlalchemy.orm import Session
@@ -7,13 +7,10 @@ from datetime import datetime, timezone
 from pydantic import BaseModel
 
 from database.session import get_db
-from database.models import Text, Chunk, ActiveAssessment, User
+from database.models import Text, Chunk, ActiveAssessment, User, Completion
 from auth.middleware import require_user
 
 router = APIRouter(tags=["Assessment"])
-
-
-# In assessment.py
 
 
 class ChunkResponse(BaseModel):
@@ -28,8 +25,22 @@ class ChunkResponse(BaseModel):
 
 class StartAssessmentResponse(BaseModel):
     assessment_id: str
-    text_title: str  # Add text title to the response
+    text_title: str
     chunk: ChunkResponse
+
+    class Config:
+        from_attributes = True
+
+
+class CompletionResponse(BaseModel):
+    """Response model for assessment completion"""
+
+    message: str
+    completion_id: str
+    assessment_id: str
+    text_title: str
+    days_remaining: int  # Time remaining to take completion test
+    completion_triggered_at: datetime
 
     class Config:
         from_attributes = True
@@ -73,7 +84,7 @@ async def start_assessment(
         if current_chunk:
             return StartAssessmentResponse(
                 assessment_id=existing_assessment.id,
-                text_title=text.title,  # Include text title
+                text_title=text.title,
                 chunk=ChunkResponse(
                     id=current_chunk.id,
                     content=current_chunk.content,
@@ -110,7 +121,7 @@ async def start_assessment(
     # Return assessment ID, text title, and first chunk
     return StartAssessmentResponse(
         assessment_id=assessment.id,
-        text_title=text.title,  # Include text title
+        text_title=text.title,
         chunk=ChunkResponse(
             id=first_chunk.id,
             content=first_chunk.content,
@@ -176,6 +187,109 @@ async def get_next_chunk(
         is_first=next_chunk.is_first,
         has_next=next_chunk.next_chunk_id is not None,
     )
+
+
+@router.post("/{assessment_id}/complete", response_model=CompletionResponse)
+async def complete_assessment(
+    assessment_id: str,
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_user),
+):
+    """Complete assessment and create completion test record"""
+
+    # Get active assessment
+    assessment = (
+        db.query(ActiveAssessment)
+        .filter(
+            ActiveAssessment.id == assessment_id,
+            ActiveAssessment.student_id == user.id,
+            ActiveAssessment.is_active == True,
+            ActiveAssessment.completed == False,
+        )
+        .first()
+    )
+
+    if not assessment:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Active assessment not found"
+        )
+
+    # Get text information
+    text = db.query(Text).get(assessment.text_id)
+    if not text:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Text not found"
+        )
+
+    # Get current chunk
+    current_chunk = db.query(Chunk).get(assessment.current_chunk_id)
+    if not current_chunk:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Current chunk not found"
+        )
+
+    # Verify this is the last chunk
+    if current_chunk.next_chunk_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Assessment is not at final chunk",
+        )
+
+    # Check for existing completion test
+    existing_completion = (
+        db.query(Completion)
+        .filter(
+            Completion.assessment_id == assessment_id, Completion.is_deleted == False
+        )
+        .first()
+    )
+
+    if existing_completion:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Completion test already exists",
+        )
+
+    # Start database transaction
+    try:
+        # 1. Mark assessment as complete
+        assessment.completed = True
+        assessment.is_active = False
+
+        # 2. Create completion test record
+        completion_triggered_at = datetime.now(timezone.utc)
+        completion = Completion(
+            student_id=user.id,
+            text_id=assessment.text_id,
+            assessment_id=assessment_id,
+            final_test_level=assessment.current_category,
+            final_test_difficulty=assessment.current_difficulty,
+            completion_triggered_at=completion_triggered_at,
+            test_status="pending",
+        )
+
+        db.add(completion)
+        db.commit()
+
+        # Calculate days remaining (14 days from trigger date)
+        days_remaining = 14
+
+        return CompletionResponse(
+            message="Assessment completed successfully. A completion test has been created.",
+            completion_id=completion.id,
+            assessment_id=assessment_id,
+            text_title=text.title,
+            days_remaining=days_remaining,
+            completion_triggered_at=completion_triggered_at,
+        )
+
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error completing assessment: {str(e)}",
+        )
 
 
 @router.get("/status/{text_id}", response_model=dict)

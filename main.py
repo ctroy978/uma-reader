@@ -21,6 +21,8 @@ from routers.auth.logout import router as logout_router
 from routers.student.assessment import router as assessment_router
 from routers.student.questions import router as questions_router
 from routers.student.evaluation import router as evaluation_router
+from routers.student.completion import router as completion_router
+
 
 load_dotenv()
 
@@ -72,6 +74,7 @@ app.include_router(logout_router, prefix="/auth")
 app.include_router(assessment_router, prefix="/assessment")
 app.include_router(questions_router, prefix="/questions")
 app.include_router(evaluation_router, prefix="/evaluation")
+app.include_router(completion_router, prefix="/student/completion")
 
 
 origins = [
