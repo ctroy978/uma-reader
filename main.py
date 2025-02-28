@@ -7,7 +7,7 @@ from dotenv import load_dotenv
 import os
 
 from database.session import get_db, engine
-from database.models import Base, User, Role
+from database.models import Base, User, Role, QuestionCategory, QuestionDifficulty
 from verification.session import engine as verification_engine
 from verification.base import Base as VerificationBase
 
@@ -22,6 +22,7 @@ from routers.student.assessment import router as assessment_router
 from routers.student.questions import router as questions_router
 from routers.student.evaluation import router as evaluation_router
 from routers.student.completion import router as completion_router
+from routers.student.completion_test import router as completion_test_router
 
 
 load_dotenv()
@@ -47,6 +48,76 @@ async def setup_initial_data():
             ]
             db.add_all(roles)
             db.commit()
+
+        # Create question categories if they don't exist
+        categories = db.query(QuestionCategory).count()
+        if categories == 0:
+            print("Initializing question categories...")
+            question_categories = [
+                QuestionCategory(
+                    category_name="literal_basic",
+                    description="Basic understanding of explicitly stated information",
+                    progression_order=1,
+                ),
+                QuestionCategory(
+                    category_name="literal_detailed",
+                    description="Detailed understanding of explicitly stated information",
+                    progression_order=2,
+                ),
+                QuestionCategory(
+                    category_name="vocabulary_context",
+                    description="Understanding vocabulary in context",
+                    progression_order=3,
+                ),
+                QuestionCategory(
+                    category_name="inferential_simple",
+                    description="Simple inferences from text",
+                    progression_order=4,
+                ),
+                QuestionCategory(
+                    category_name="inferential_complex",
+                    description="Complex inferences requiring deeper analysis",
+                    progression_order=5,
+                ),
+                QuestionCategory(
+                    category_name="structural_basic",
+                    description="Basic understanding of text structure",
+                    progression_order=6,
+                ),
+                QuestionCategory(
+                    category_name="structural_advanced",
+                    description="Advanced analysis of text structure and organization",
+                    progression_order=7,
+                ),
+            ]
+            db.add_all(question_categories)
+            db.commit()
+            print("Question categories initialized successfully.")
+
+        # Create question difficulty levels if they don't exist
+        difficulties = db.query(QuestionDifficulty).count()
+        if difficulties == 0:
+            print("Initializing question difficulty levels...")
+            question_difficulties = [
+                QuestionDifficulty(
+                    difficulty_name="basic",
+                    description="Entry level questions",
+                    level_value=1,
+                ),
+                QuestionDifficulty(
+                    difficulty_name="intermediate",
+                    description="Medium difficulty questions",
+                    level_value=2,
+                ),
+                QuestionDifficulty(
+                    difficulty_name="advanced",
+                    description="Challenging questions",
+                    level_value=3,
+                ),
+            ]
+            db.add_all(question_difficulties)
+            db.commit()
+            print("Question difficulty levels initialized successfully.")
     finally:
         db.close()
 
@@ -75,6 +146,7 @@ app.include_router(assessment_router, prefix="/assessment")
 app.include_router(questions_router, prefix="/questions")
 app.include_router(evaluation_router, prefix="/evaluation")
 app.include_router(completion_router, prefix="/student/completion")
+app.include_router(completion_test_router, prefix="/completion-test")
 
 
 origins = [

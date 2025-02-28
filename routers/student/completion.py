@@ -142,3 +142,46 @@ async def start_completion_test(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error starting completion test: {str(e)}",
         )
+
+
+@router.get("/{completion_id}", response_model=dict)
+async def get_completion_test(
+    completion_id: str,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_user),
+):
+    """Get details for a specific completion test"""
+    completion = (
+        db.query(Completion)
+        .filter(
+            Completion.id == completion_id,
+            Completion.student_id == user.id,
+            Completion.is_deleted == False,
+        )
+        .first()
+    )
+
+    if not completion:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Completion test not found",
+        )
+
+    # Get text information
+    text = db.query(Text).get(completion.text_id)
+    if not text:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Text not found",
+        )
+
+    return {
+        "completion_id": completion.id,
+        "text_id": completion.text_id,
+        "text_title": text.title,
+        "assessment_id": completion.assessment_id,
+        "test_status": completion.test_status,
+        "final_test_level": completion.final_test_level,
+        "final_test_difficulty": completion.final_test_difficulty,
+        "days_remaining": 14,  # Calculate the actual days remaining here
+    }
