@@ -11,6 +11,7 @@ from sqlalchemy import (
     event,
     DateTime,
 )
+from sqlalchemy import Text as SQLText  # Import as SQLText to avoid conflict
 
 from sqlalchemy.orm import Mapped, relationship, validates
 
@@ -53,6 +54,9 @@ class Completion(Base, TimestampMixin, SoftDeleteMixin):
     overall_score: Mapped[float] = Column(Float, nullable=False, default=0.0)
     total_questions: Mapped[int] = Column(Integer, nullable=False, default=0)
     correct_answers: Mapped[int] = Column(Integer, nullable=False, default=0)
+
+    # ai analysis
+    analysis_content: Mapped[str] = Column(SQLText, nullable=True)
 
     # Category success rates (0-100)
     literal_basic_success: Mapped[float] = Column(Float, nullable=False, default=0.0)

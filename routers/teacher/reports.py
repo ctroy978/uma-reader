@@ -325,11 +325,12 @@ async def get_student_single_report(
     completion_id: str,
     db: Session = Depends(get_db),
     teacher: User = Depends(require_teacher),
+    regenerate: bool = False,  # Add this parameter
 ):
     """Generate a single test report with text analysis for a student or teacher"""
 
     try:
-        # Verify the user exists (allow both students and teachers)
+        # Your existing verification code remains unchanged
         user = (
             db.query(User)
             .filter(
@@ -367,11 +368,22 @@ async def get_student_single_report(
                 status_code=status.HTTP_404_NOT_FOUND, detail="Text not found"
             )
 
-        # Generate the report
-        analysis = await generate_single_test_analysis(completion, text)
+        # Check if analysis exists and we're not forcing regeneration
+        if completion.analysis_content and not regenerate:
+            # Use the cached analysis
+            analysis = SingleTestAnalysis.parse_raw(completion.analysis_content)
+            from_cache = True
+        else:
+            # Generate a new analysis
+            analysis = await generate_single_test_analysis(completion, text)
+
+            # Store the analysis for future use
+            completion.analysis_content = analysis.json()
+            db.commit()
+            from_cache = False
 
         return {
-            "student_name": user.full_name,  # Changed from student.full_name
+            "student_name": user.full_name,
             "report_type": "single_test",
             "analysis": analysis.dict(),
             "text_title": text.title,
@@ -380,6 +392,7 @@ async def get_student_single_report(
             "overall_score": completion.overall_score,
             "total_questions": completion.total_questions,
             "correct_answers": completion.correct_answers,
+            "from_cache": from_cache,  # Add this field
         }
     except Exception as e:
         import traceback
