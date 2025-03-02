@@ -11,6 +11,7 @@ from sqlalchemy import (
     event,
     DateTime,
 )
+
 from sqlalchemy.orm import Mapped, relationship, validates
 
 from ..base import Base, TimestampMixin, SoftDeleteMixin

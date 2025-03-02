@@ -299,7 +299,7 @@ async def get_assessment_status(
     db: Session = Depends(get_db),
     user: User = Depends(require_user),
 ):
-    """Check if student has an active assessment for this text"""
+    """Check if student has an active or completed assessment for this text"""
 
     # Check for existing active assessment
     active_assessment = (
@@ -313,7 +313,33 @@ async def get_assessment_status(
         .first()
     )
 
+    # Check for completed assessment
+    completed_assessment = (
+        db.query(ActiveAssessment)
+        .filter(
+            ActiveAssessment.student_id == user.id,
+            ActiveAssessment.text_id == text_id,
+            ActiveAssessment.completed == True,
+        )
+        .first()
+    )
+
+    # Check for completion record if assessment is completed
+    completion = None
+    if completed_assessment:
+        completion = (
+            db.query(Completion)
+            .filter(
+                Completion.assessment_id == completed_assessment.id,
+                Completion.is_deleted == False,
+            )
+            .first()
+        )
+
     return {
         "has_active_assessment": active_assessment is not None,
         "assessment_id": active_assessment.id if active_assessment else None,
+        "is_completed": completed_assessment is not None,
+        "completion_id": completion.id if completion else None,
+        "completion_status": completion.test_status if completion else None,
     }
