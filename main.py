@@ -24,6 +24,8 @@ from routers.student.evaluation import router as evaluation_router
 from routers.student.completion import router as completion_router
 from routers.student.completion_test import router as completion_test_router
 from routers.teacher.reports import router as teacher_reports_router
+from routers.student.simplify import router as simplify_router
+from routers.admin.cache import router as cache_admin_router
 
 
 load_dotenv()
@@ -149,6 +151,12 @@ app.include_router(evaluation_router, prefix="/evaluation")
 app.include_router(completion_router, prefix="/student/completion")
 app.include_router(completion_test_router, prefix="/completion-test")
 app.include_router(teacher_reports_router, prefix="/teacher/reports")
+app.include_router(simplify_router, prefix="/simplify")
+app.include_router(cache_admin_router, prefix="/admin/cache")
+
+from routers.admin.cache import (
+    router as cache_admin_router,
+)  # New import for cache management
 
 
 origins = [

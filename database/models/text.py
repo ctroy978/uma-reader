@@ -100,6 +100,10 @@ class Chunk(Base, TimestampMixin, SoftDeleteMixin):
     active_assessments = relationship(
         "ActiveAssessment", back_populates="current_chunk"
     )
+    # New relationship for simplified versions - use string to avoid circular import
+    simplified_versions = relationship(
+        "SimplifiedChunk", back_populates="chunk", cascade="all, delete-orphan"
+    )
 
     # Constraints
     __table_args__ = (CheckConstraint("word_count > 0", name="valid_word_count"),)

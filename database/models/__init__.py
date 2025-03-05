@@ -14,6 +14,9 @@ from database.models.assessment import ActiveAssessment
 from database.models.completion import Completion, CompletionQuestion
 from .token import RefreshToken
 
+# Import SimplifiedChunk after all other models to avoid circular imports
+from .simplified_text import SimplifiedChunk
+
 # List all models for easy access
 __all__ = [
     "Role",
@@ -29,4 +32,5 @@ __all__ = [
     "Completion",
     "CompletionQuestion",
     "RefreshToken",
+    "SimplifiedChunk",
 ]
