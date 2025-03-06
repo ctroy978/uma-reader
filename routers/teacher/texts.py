@@ -13,6 +13,20 @@ from database.session import get_db
 from database.models import User, Text, Chunk, Genre
 from auth.middleware import require_teacher
 
+import redis
+import json
+import os
+
+# Initialize Redis client - adjust connection details as needed
+REDIS_HOST = os.getenv("REDIS_HOST", "localhost")
+REDIS_PORT = int(os.getenv("REDIS_PORT", "6379"))
+REDIS_DB = int(os.getenv("REDIS_DB", "0"))
+REDIS_PASSWORD = os.getenv("REDIS_PASSWORD", None)
+
+redis_client = redis.Redis(
+    host=REDIS_HOST, port=REDIS_PORT, db=REDIS_DB, password=REDIS_PASSWORD
+)
+
 
 # Enums for text metadata - matching database constraints
 class TextForm(str, Enum):
@@ -174,6 +188,9 @@ async def create_text(
 
             db.add(current_chunk)
             db.flush()  # Get the chunk ID
+
+            # Submit to TTS queue
+            submit_chunk_to_tts(current_chunk.id, chunk_content)
 
             if previous_chunk:
                 previous_chunk.next_chunk_id = current_chunk.id
@@ -476,6 +493,9 @@ async def update_text(
             db.add(current_chunk)
             db.flush()  # Get the chunk ID
 
+            # Submit to TTS queue
+            submit_chunk_to_tts(current_chunk.id, chunk_content)
+
             if previous_chunk:
                 previous_chunk.next_chunk_id = current_chunk.id
             else:
@@ -597,3 +617,17 @@ async def delete_text(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Database error occurred while deleting text",
         )
+
+
+# Function to submit a chunk to TTS processing
+def submit_chunk_to_tts(chunk_id: str, text: str):
+    """
+    Submit a chunk to the TTS queue
+
+    Args:
+        chunk_id: Unique identifier for the chunk
+        text: Text content to convert to speech
+    """
+    job_data = {"id": chunk_id, "text": text}
+    # redis_client.lpush("tts_jobs", json.dumps(job_data))
+    print("REMEMBER TO UNCOMMENT THE REDIS CLIENT CALL")
