@@ -13,6 +13,8 @@ from database.models import (
     Role,
     QuestionCategory,
     QuestionDifficulty,
+    EmailWhitelist,
+    WhitelistType,
 )
 from verification.session import engine as verification_engine
 from verification.base import Base as VerificationBase
@@ -21,6 +23,7 @@ from routers.auth.login import router as login_router
 from routers.auth.registration import router as registration_router
 from routers.auth.token import router as token_router
 from routers.admin.users import router as user_router
+from routers.admin.whitelist import router as whitelist_router  # New import
 from routers.teacher.texts import router as text_router
 from routers.student.teachers import router as student_teachers_router
 from routers.auth.logout import router as logout_router
@@ -33,6 +36,7 @@ from routers.teacher.reports import router as teacher_reports_router
 from routers.student.simplify import router as simplify_router
 from routers.admin.cache import router as cache_admin_router
 from routers.admin.question_cache import router as question_cache_router
+from services.whitelist_service import WhitelistService
 
 
 load_dotenv()
@@ -128,6 +132,39 @@ async def setup_initial_data():
             db.add_all(question_difficulties)
             db.commit()
             print("Question difficulty levels initialized successfully.")
+
+        # Setup initial whitelist if needed
+        whitelist_count = db.query(EmailWhitelist).count()
+        if whitelist_count == 0:
+            print("Setting up initial email whitelist...")
+
+            # Get the admin email domain for initial whitelist
+            initial_admin_email = os.getenv("INITIAL_ADMIN_EMAIL")
+            if initial_admin_email and "@" in initial_admin_email:
+                admin_domain = initial_admin_email.split("@")[-1]
+
+                # Add the admin domain to whitelist
+                WhitelistService.add_to_whitelist(
+                    admin_domain, WhitelistType.DOMAIN, "Initial admin domain", db
+                )
+
+                # Also whitelist the specific admin email
+                WhitelistService.add_to_whitelist(
+                    initial_admin_email, WhitelistType.EMAIL, "Initial admin email", db
+                )
+
+                print(f"Added initial admin domain '{admin_domain}' to whitelist")
+
+            # Add sample school district domain if specified in env
+            school_domain = os.getenv("SCHOOL_DOMAIN")
+            if school_domain:
+                WhitelistService.add_to_whitelist(
+                    school_domain, WhitelistType.DOMAIN, "School district domain", db
+                )
+                print(f"Added school domain '{school_domain}' to whitelist")
+
+            print("Email whitelist initialized successfully.")
+
     finally:
         db.close()
 
@@ -149,6 +186,7 @@ app.include_router(login_router, prefix="/auth")
 app.include_router(registration_router, prefix="/auth")
 app.include_router(token_router, prefix="/auth")
 app.include_router(user_router, prefix="/admin")
+app.include_router(whitelist_router, prefix="/admin")  # New router
 app.include_router(text_router, prefix="/teacher")
 app.include_router(student_teachers_router, prefix="/student/teachers")
 app.include_router(logout_router, prefix="/auth")

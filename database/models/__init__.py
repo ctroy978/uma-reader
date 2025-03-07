@@ -14,6 +14,7 @@ from database.models.assessment import ActiveAssessment
 from database.models.completion import Completion, CompletionQuestion
 from .token import RefreshToken
 from .question_cache import QuestionCache
+from .whitelist import EmailWhitelist, WhitelistType
 
 
 # Import SimplifiedChunk after all other models to avoid circular imports
@@ -36,4 +37,6 @@ __all__ = [
     "RefreshToken",
     "SimplifiedChunk",
     "QuestionCache",
+    "EmailWhitelist",
+    "WhitelistType",
 ]

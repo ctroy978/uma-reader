@@ -1,3 +1,4 @@
+# app/routers/auth/registration.py
 from fastapi import APIRouter, Depends, HTTPException, status, Request, Response
 from sqlalchemy.orm import Session
 from pydantic import BaseModel, EmailStr
@@ -12,6 +13,7 @@ from database.models import User
 from verification.models import OTPVerification, VerificationType
 from .email import send_registration_email
 from auth.jwt_utils import create_access_token
+from services.whitelist_service import WhitelistService
 
 router = APIRouter(tags=["Authentication"])
 
@@ -56,6 +58,14 @@ async def initiate_registration(
             status_code=status.HTTP_400_BAD_REQUEST, detail="Username already taken"
         )
 
+    # Check if email is allowed (whitelist check)
+    if not WhitelistService.is_email_allowed(registration.email, db):
+        # Don't provide too specific error details to prevent email enumeration
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Registration is restricted to authorized email addresses only",
+        )
+
     # Generate and store OTP
     otp = "".join(random.choices(string.digits, k=6))
     verification = OTPVerification(
@@ -97,6 +107,13 @@ async def complete_registration(
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid or expired verification code",
+        )
+
+    # Double-check whitelist status before completing registration
+    if not WhitelistService.is_email_allowed(registration.email, db):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Registration is restricted to authorized email addresses only",
         )
 
     # Mark OTP as used
