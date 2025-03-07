@@ -13,6 +13,8 @@ from database.models.text import Text, Chunk
 from database.models.assessment import ActiveAssessment
 from database.models.completion import Completion, CompletionQuestion
 from .token import RefreshToken
+from .question_cache import QuestionCache
+
 
 # Import SimplifiedChunk after all other models to avoid circular imports
 from .simplified_text import SimplifiedChunk
@@ -33,4 +35,5 @@ __all__ = [
     "CompletionQuestion",
     "RefreshToken",
     "SimplifiedChunk",
+    "QuestionCache",
 ]

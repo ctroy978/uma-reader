@@ -1,4 +1,4 @@
-# evaluation.py
+# routers/evaluation.py
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from pydantic import BaseModel, Field
@@ -7,12 +7,16 @@ from datetime import datetime, timezone
 from pydantic_ai import Agent
 from pydantic_ai.models.gemini import GeminiModel
 from dotenv import load_dotenv
+import logging
 
 from database.session import get_db
 from database.models import ActiveAssessment, User, Text, Chunk
 from auth.middleware import require_user
 from .questions import get_question
 from .progression import update_category_on_result
+
+# Set up logging
+logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["student-evaluation"])
 
@@ -42,6 +46,7 @@ class QuestionResponse(BaseModel):
     category: str
     question_text: str
     assessment_id: str
+    from_cache: bool = False
 
 
 class EvaluationResponse(BaseModel):
@@ -122,7 +127,7 @@ async def evaluate_answer_with_ai(
         return result.data
 
     except Exception as e:
-        print(f"AI Evaluation Error: {str(e)}")
+        logger.error(f"AI Evaluation Error: {str(e)}")
         # Fallback evaluation if AI fails
         return AIEvaluation(
             is_correct=False,
@@ -182,13 +187,14 @@ async def evaluate_answer(
 
         # If answer is wrong, always generate new question
         if not evaluation.is_correct:
-            question_text = await get_question(
+            question_text, from_cache = await get_question(
                 assessment.current_category, assessment_id, db
             )
             next_question = QuestionResponse(
                 category=assessment.current_category,
                 question_text=question_text,
                 assessment_id=assessment_id,
+                from_cache=from_cache,
             )
 
         # Can only progress to next chunk if answer is correct
@@ -205,6 +211,7 @@ async def evaluate_answer(
 
     except Exception as e:
         db.rollback()
+        logger.error(f"Error evaluating answer: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error evaluating answer: {str(e)}",

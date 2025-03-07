@@ -7,7 +7,13 @@ from dotenv import load_dotenv
 import os
 
 from database.session import get_db, engine
-from database.models import Base, User, Role, QuestionCategory, QuestionDifficulty
+from database.models import (
+    Base,
+    User,
+    Role,
+    QuestionCategory,
+    QuestionDifficulty,
+)
 from verification.session import engine as verification_engine
 from verification.base import Base as VerificationBase
 
@@ -26,6 +32,7 @@ from routers.student.completion_test import router as completion_test_router
 from routers.teacher.reports import router as teacher_reports_router
 from routers.student.simplify import router as simplify_router
 from routers.admin.cache import router as cache_admin_router
+from routers.admin.question_cache import router as question_cache_router
 
 
 load_dotenv()
@@ -153,6 +160,8 @@ app.include_router(completion_test_router, prefix="/completion-test")
 app.include_router(teacher_reports_router, prefix="/teacher/reports")
 app.include_router(simplify_router, prefix="/simplify")
 app.include_router(cache_admin_router, prefix="/admin/cache")
+app.include_router(question_cache_router, prefix="/admin/question-cache")
+
 
 from routers.admin.cache import (
     router as cache_admin_router,

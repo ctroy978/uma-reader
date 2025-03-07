@@ -43,6 +43,7 @@ class PrimaryType(Base, TimestampMixin):
         return self.type_name
 
 
+# app/database/models/references.py - partial file, only showing the updated class
 class QuestionCategory(Base, TimestampMixin):
     """Reference table for question categories with progression order"""
 
@@ -57,6 +58,8 @@ class QuestionCategory(Base, TimestampMixin):
     completion_questions = relationship(
         "CompletionQuestion", back_populates="category_ref"
     )
+
+    cached_questions = relationship("QuestionCache", back_populates="category")
 
     def __str__(self) -> str:
         return self.category_name

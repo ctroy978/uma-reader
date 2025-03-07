@@ -105,6 +105,10 @@ class Chunk(Base, TimestampMixin, SoftDeleteMixin):
         "SimplifiedChunk", back_populates="chunk", cascade="all, delete-orphan"
     )
 
+    cached_questions = relationship(
+        "QuestionCache", back_populates="chunk", cascade="all, delete-orphan"
+    )
+
     # Constraints
     __table_args__ = (CheckConstraint("word_count > 0", name="valid_word_count"),)
 
