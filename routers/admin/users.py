@@ -2,12 +2,13 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from typing import Annotated, List
 from pydantic import BaseModel, UUID4
+from sqlalchemy import or_
 
 from database.session import get_db
 from database.models import User
 from auth.middleware import require_admin
 
-router = APIRouter(prefix="/users", tags=["Admin"])
+router = APIRouter(tags=["Admin"])
 
 
 # Response Models
