@@ -18,6 +18,20 @@ model = GeminiModel("gemini-2.0-flash")
 
 router = APIRouter(tags=["teacher-reports"])
 
+# =============================================================================
+# CONFIGURATION FLAGS
+# =============================================================================
+# This flag controls whether cumulative reports are available to users.
+# It is currently set to False to disable cumulative reports temporarily
+# until front-end issues are resolved. When the front-end is fixed,
+# set this to True to re-enable the functionality.
+#
+# IMPORTANT: When this flag is False, all cumulative report endpoints will
+# return appropriate error messages, and no cumulative reports will be
+# included in the list of available reports.
+# =============================================================================
+CUMULATIVE_REPORTS_ENABLED = False  # Temporarily disable cumulative reports
+
 
 # Pydantic models for AI responses
 class SingleTestAnalysis(BaseModel):
@@ -507,7 +521,13 @@ async def get_student_cumulative_report(
     db: Session = Depends(get_db),
     teacher: User = Depends(require_teacher),
 ):
-    """Generate a cumulative text report for a student or teacher"""
+    """Generate a cumulative text report for a student or teacher
+
+    NOTE: Cumulative reports are currently disabled via the CUMULATIVE_REPORTS_ENABLED
+    configuration flag at the top of this file. When the flag is set to False,
+    this endpoint will return an error message indicating that cumulative reports
+    are unavailable, regardless of how many completed tests a student has.
+    """
     try:
         # Verify the user exists (allow both students and teachers)
         user = (
@@ -536,12 +556,12 @@ async def get_student_cumulative_report(
             .all()
         )
 
-        # Check if we have enough data for cumulative analysis
-        if len(completions) < 7:
+        # Check if cumulative reports are enabled and if we have enough data
+        if not CUMULATIVE_REPORTS_ENABLED or len(completions) < 7:
             return {
-                "student_name": user.full_name,  # Changed from student.full_name
+                "student_name": user.full_name,
                 "report_type": "cumulative",
-                "error": "Insufficient data for cumulative report. Minimum 7 completed tests required.",
+                "error": "Cumulative reports are currently unavailable.",
                 "current_tests": len(completions),
             }
 
@@ -553,7 +573,7 @@ async def get_student_cumulative_report(
         analysis = await generate_cumulative_analysis(completions, texts)
 
         return {
-            "student_name": user.full_name,  # Changed from student.full_name
+            "student_name": user.full_name,
             "report_type": "cumulative",
             "analysis": analysis.dict(),
             "total_tests": len(completions),
@@ -582,7 +602,13 @@ async def get_student_cumulative_report_graph_data(
     db: Session = Depends(get_db),
     teacher: User = Depends(require_teacher),
 ):
-    """Get graph data for cumulative reports"""
+    """Get graph data for cumulative reports
+
+    NOTE: Cumulative reports are currently disabled via the CUMULATIVE_REPORTS_ENABLED
+    configuration flag at the top of this file. When the flag is set to False,
+    this endpoint will return an HTTP 400 error indicating that cumulative reports
+    are unavailable, regardless of how many completed tests a student has.
+    """
     try:
         # Verify the user exists (allow both students and teachers)
         user = (
@@ -611,11 +637,11 @@ async def get_student_cumulative_report_graph_data(
             .all()
         )
 
-        # Check if we have enough data for cumulative analysis
-        if len(completions) < 7:
+        # Check if cumulative reports are enabled and if we have enough data
+        if not CUMULATIVE_REPORTS_ENABLED or len(completions) < 7:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Insufficient data for cumulative report. Minimum 7 completed tests required. Current: {len(completions)}",
+                detail="Cumulative reports are currently unavailable.",
             )
 
         # Get all associated texts
@@ -679,7 +705,12 @@ async def get_all_reports(
     db: Session = Depends(get_db),
     teacher: User = Depends(require_teacher),
 ):
-    """Get all available reports for a teacher"""
+    """Get all available reports for a teacher
+
+    NOTE: When cumulative reports are disabled via the CUMULATIVE_REPORTS_ENABLED
+    configuration flag at the top of this file, this endpoint will only return
+    single test reports and not include any cumulative reports in the list.
+    """
     try:
         # Find all completed assessments
         completions = (
@@ -718,34 +749,38 @@ async def get_all_reports(
                 }
             )
 
-        # Add cumulative reports for users with enough data
-        for student_id in set(c.student_id for c in completions):
-            student_completions = [c for c in completions if c.student_id == student_id]
-            if len(student_completions) >= 7:  # Minimum for cumulative reports
-                user = db.query(User).filter(User.id == student_id).first()
-                if not user:
-                    continue
+        # Only add cumulative reports if they are enabled
+        if CUMULATIVE_REPORTS_ENABLED:
+            # Add cumulative reports for users with enough data
+            for student_id in set(c.student_id for c in completions):
+                student_completions = [
+                    c for c in completions if c.student_id == student_id
+                ]
+                if len(student_completions) >= 7:  # Minimum for cumulative reports
+                    user = db.query(User).filter(User.id == student_id).first()
+                    if not user:
+                        continue
 
-                # Calculate date range and average score
-                completion_dates = [c.completed_at for c in student_completions]
-                date_range = (max(completion_dates) - min(completion_dates)).days
-                avg_score = sum(c.overall_score for c in student_completions) / len(
-                    student_completions
-                )
+                    # Calculate date range and average score
+                    completion_dates = [c.completed_at for c in student_completions]
+                    date_range = (max(completion_dates) - min(completion_dates)).days
+                    avg_score = sum(c.overall_score for c in student_completions) / len(
+                        student_completions
+                    )
 
-                reports.append(
-                    {
-                        "id": f"cumulative-{student_id}",
-                        "report_type": "cumulative",
-                        "student_id": student_id,
-                        "student_name": user.full_name,
-                        "grade_level": getattr(user, "grade_level", 0),
-                        "tests_count": len(student_completions),
-                        "days_covered": date_range,
-                        "completed_at": max(completion_dates),
-                        "overall_score": avg_score,
-                    }
-                )
+                    reports.append(
+                        {
+                            "id": f"cumulative-{student_id}",
+                            "report_type": "cumulative",
+                            "student_id": student_id,
+                            "student_name": user.full_name,
+                            "grade_level": getattr(user, "grade_level", 0),
+                            "tests_count": len(student_completions),
+                            "days_covered": date_range,
+                            "completed_at": max(completion_dates),
+                            "overall_score": avg_score,
+                        }
+                    )
 
         return reports
     except Exception as e:
