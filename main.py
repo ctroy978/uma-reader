@@ -209,6 +209,7 @@ from routers.admin.cache import (
 origins = [
     os.getenv("FRONTEND_URL", "http://localhost:5173"),
     "https://umaread.org",
+    "http://umaread.org",
 ]
 
 app.add_middleware(

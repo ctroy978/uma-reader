@@ -16,7 +16,9 @@ from auth.middleware import require_user
 load_dotenv()
 model = GeminiModel("gemini-2.0-flash")
 
-router = APIRouter(tags=["teacher-reports"])
+# router = APIRouter(tags=["teacher-reports"])
+router = APIRouter(prefix="", tags=["teacher-reports"])
+
 
 # =============================================================================
 # CONFIGURATION FLAGS
