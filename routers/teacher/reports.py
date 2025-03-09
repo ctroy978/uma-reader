@@ -16,9 +16,9 @@ from auth.middleware import require_user
 load_dotenv()
 model = GeminiModel("gemini-2.0-flash")
 
+# Change this to have the CORRECT router definition
+# Change from prefix="" to tags only
 router = APIRouter(tags=["teacher-reports"])
-# router = APIRouter(prefix="", tags=["teacher-reports"])
-
 
 # =============================================================================
 # CONFIGURATION FLAGS
@@ -335,6 +335,7 @@ def analyze_text_performance_for_graph(
 
 
 # Single test endpoints
+# Change from @router.get("/student/{student_id}/report/{completion_id}") to:
 @router.get("/student/{student_id}/report/{completion_id}")
 async def get_student_single_report(
     student_id: str,
@@ -702,7 +703,8 @@ async def get_student_cumulative_report_graph_data(
         )
 
 
-@router.get("/")
+# Root endpoint - change from @router.get("/") to:
+@router.get("")
 async def get_all_reports(
     db: Session = Depends(get_db),
     teacher: User = Depends(require_teacher),
