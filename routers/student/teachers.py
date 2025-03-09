@@ -33,7 +33,7 @@ class TeacherStatsResponse(BaseModel):
 
 
 # Get list of active teachers with text counts
-@router.get("/", response_model=List[TeacherResponse])
+@router.get("", response_model=List[TeacherResponse])
 async def list_teachers(db: Session = Depends(get_db)):
     """
     Get list of all teachers who have published texts
