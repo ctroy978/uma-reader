@@ -124,10 +124,11 @@ class TextResponse(BaseModel):
     model_config = {"from_attributes": True, "arbitrary_types_allowed": True}
 
 
-router = APIRouter(prefix="/texts", tags=["Texts"])
+# router = APIRouter(prefix="/texts", tags=["Texts"])
+router = APIRouter(tags=["Texts"])
 
 
-@router.post("/", response_model=TextResponse, status_code=status.HTTP_201_CREATED)
+@router.post("/texts", response_model=TextResponse, status_code=status.HTTP_201_CREATED)
 async def create_text(
     text_data: str = Form(...),  # Changed to receive form data as string
     content: str = Form(...),
@@ -230,7 +231,7 @@ async def create_text(
         )
 
 
-@router.get("/", response_model=List[TextResponse])
+@router.get("/texts", response_model=List[TextResponse])
 async def get_texts(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_teacher),
@@ -279,7 +280,7 @@ class TextDetailResponse(BaseModel):
     chunks: List[dict]
 
 
-@router.get("/{text_id}", response_model=TextDetailResponse)
+@router.get("/texts/{text_id}", response_model=TextDetailResponse)
 async def get_text(
     text_id: str,
     db: Session = Depends(get_db),
@@ -369,7 +370,7 @@ class ActiveAssessmentInfo(BaseModel):
 # Add these new routes to the existing router
 
 
-@router.get("/{text_id}/active-assessments", response_model=ActiveAssessmentInfo)
+@router.get("/texts/{text_id}/active-assessments", response_model=ActiveAssessmentInfo)
 async def check_active_assessments(
     text_id: str,
     db: Session = Depends(get_db),
@@ -419,7 +420,7 @@ class TextUpdateRequest(BaseModel):
     force: bool = False  # If True, will proceed even with active assessments
 
 
-@router.put("/{text_id}", response_model=TextResponse)
+@router.put("/texts/{text_id}", response_model=TextResponse)
 async def update_text(
     text_id: str,
     content: str = Form(...),
@@ -545,7 +546,7 @@ def require_roles(allowed_roles: List[str]):
     return role_checker
 
 
-@router.delete("/{text_id}", status_code=status.HTTP_200_OK)
+@router.delete("/texts/{text_id}", status_code=status.HTTP_200_OK)
 async def delete_text(
     text_id: str,
     force: bool = Query(False, description="Force delete even with active assessments"),
