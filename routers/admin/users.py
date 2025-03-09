@@ -8,7 +8,7 @@ from database.session import get_db
 from database.models import User
 from auth.middleware import require_admin
 
-router = APIRouter(tags=["Admin"])
+router = APIRouter(prefix="/users", tags=["Admin"])
 
 
 # Response Models
@@ -36,7 +36,7 @@ class UserRoleUpdate(BaseModel):
 
 
 # Routes
-@router.get("/", response_model=List[UserResponse])
+@router.get("", response_model=List[UserResponse])
 async def get_users(
     db: Annotated[Session, Depends(get_db)],
     _: Annotated[User, Depends(require_admin)],
