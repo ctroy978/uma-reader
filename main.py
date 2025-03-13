@@ -37,6 +37,7 @@ from routers.student.simplify import router as simplify_router
 from routers.admin.cache import router as cache_admin_router
 from routers.admin.question_cache import router as question_cache_router
 from services.whitelist_service import WhitelistService
+from routers.admin.database import router as database_admin_router
 
 
 load_dotenv()
@@ -199,6 +200,7 @@ app.include_router(teacher_reports_router, prefix="/teacher/reports")
 app.include_router(simplify_router, prefix="/simplify")
 app.include_router(cache_admin_router, prefix="/admin/cache")
 app.include_router(question_cache_router, prefix="/admin/question-cache")
+app.include_router(database_admin_router, prefix="/admin")
 
 
 from routers.admin.cache import (
