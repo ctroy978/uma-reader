@@ -630,5 +630,5 @@ def submit_chunk_to_tts(chunk_id: str, text: str):
         text: Text content to convert to speech
     """
     job_data = {"id": chunk_id, "text": text}
-    redis_client.lpush("tts_jobs", json.dumps(job_data))
-    # print("REMEMBER TO UNCOMMENT THE REDIS CLIENT CALL")
+    # redis_client.lpush("tts_jobs", json.dumps(job_data))
+    print("REMEMBER TO UNCOMMENT THE REDIS CLIENT CALL")
