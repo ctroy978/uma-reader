@@ -9,6 +9,7 @@ from pydantic_ai.models.gemini import GeminiModel
 from dotenv import load_dotenv
 import uuid
 import logging
+import os
 
 from database.session import get_db
 from database.models import ActiveAssessment, User, Text, Chunk, QuestionCache
@@ -21,7 +22,11 @@ router = APIRouter()
 
 # Load environment variables and initialize AI model
 load_dotenv()
-model = GeminiModel("gemini-2.0-flash")
+
+ai_model = os.getenv("AI_MODEL", "gemini-2.0-flash-lite")
+model = GeminiModel(ai_model)
+
+# model = GeminiModel("gemini-2.0-flash")
 
 
 class Question(BaseModel):

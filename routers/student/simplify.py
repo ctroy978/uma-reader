@@ -20,7 +20,11 @@ router = APIRouter(tags=["text-simplification"])
 
 # Load environment variables and initialize AI model
 load_dotenv()
-model = GeminiModel("gemini-2.0-flash")
+
+ai_model = os.getenv("AI_MODEL", "gemini-2.0-flash-lite")
+model = GeminiModel(ai_model)
+
+# model = GeminiModel("gemini-2.0-flash")
 
 
 class SimplifiedText(BaseModel):
