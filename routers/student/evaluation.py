@@ -64,51 +64,67 @@ class EvaluationResponse(BaseModel):
 
 
 def build_evaluation_prompt(
-    context: str, question: str, answer: str, category: str
+    context: str, question: str, answer: str, category: str, grade_level: int = None
 ) -> str:
-    """Build the context-aware evaluation prompt"""
+    """Build a more flexible context-aware evaluation prompt"""
     category_criteria = {
         "literal_basic": """
             Evaluation criteria:
-            - Answer correctly identifies explicitly stated information
-            - Response uses evidence directly from the text
-            - Basic comprehension is demonstrated
+            - Answer shows recognition of explicitly stated information from the text
+            - Student demonstrates basic comprehension even if the answer is incomplete
+            - Credit should be given for partial understanding
         """,
         "literal_detailed": """
             Evaluation criteria:
-            - Answer connects multiple details from the text
-            - Response shows thorough understanding of explicit information
-            - Supporting details are accurately referenced
+            - Answer identifies key details from the text, even if not all details are included
+            - Student shows understanding of explicit information, even if explanation is imperfect
+            - Accept answers that demonstrate the main point, even if supporting details are limited
         """,
         "inferential_simple": """
             Evaluation criteria:
-            - Answer shows basic inferential thinking
-            - Response connects ideas logically
-            - Simple conclusions are supported by text evidence
+            - Answer demonstrates basic inferential thinking, even if reasoning is not fully explained
+            - Accept logical connections that show understanding, even if expressed simply
+            - Credit reasonable interpretations even if different from the most obvious inference
         """,
         "inferential_complex": """
             Evaluation criteria:
-            - Answer demonstrates deep analysis
-            - Response shows advanced inferential thinking
-            - Complex relationships between ideas are understood
-            - Conclusions are well-supported with text evidence
+            - Answer shows meaningful analysis, even if not exhaustive
+            - Accept valid inferential thinking that demonstrates understanding of underlying concepts
+            - Credit thoughtful interpretations that are supported by the text, even if imperfectly expressed
         """,
     }
 
+    # Add grade-level appropriate guidance if available
+    grade_guidance = ""
+    if grade_level:
+        grade_guidance = f"\nThis student is at grade level {grade_level}. Evaluate appropriately for this age group."
+
     return f"""
-    You are an experienced reading teacher evaluating a student's answer.
+    You are an experienced, supportive reading teacher evaluating a student's answer.
     
     Text passage: "{context}"
     Question: "{question}"
     Student's answer: "{answer}"
     
     {category_criteria.get(category, "Evaluate the answer based on text evidence and comprehension.")}
+    {grade_guidance}
+    
+    IMPORTANT EVALUATION GUIDELINES:
+    - Consider answers correct if they demonstrate understanding of the core concept, even if imperfectly expressed
+    - Accept different wording, phrasing, or vocabulary that still shows comprehension
+    - Give credit for partial understanding when the main point is captured
+    - Be flexible with grammar, spelling, or phrasing issues if they don't interfere with meaning
+    - Consider the answer correct if it contains the essential elements, even if not fully developed
+    
+    Evaluation threshold:
+    - Correct (TRUE): The answer demonstrates understanding of the key concepts, even if imperfect
+    - Incorrect (FALSE): The answer shows fundamental misunderstanding or contains no relevant information
     
     Provide:
-    1. A boolean indicating if the answer is correct (is_correct)
-    2. Constructive feedback explaining why (feedback)
+    1. A boolean indicating if the answer is correct (is_correct) using the flexible threshold described above
+    2. Constructive, encouraging feedback explaining your evaluation
     
-    Keep feedback concise, specific, and encouraging.
+    Keep feedback concise, specific, and positive. Acknowledge what the student did well even when giving critical feedback.
     """
 
 

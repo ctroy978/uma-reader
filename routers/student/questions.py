@@ -26,8 +26,6 @@ load_dotenv()
 ai_model = os.getenv("AI_MODEL", "gemini-2.0-flash")
 model = GeminiModel(ai_model)
 
-# model = GeminiModel("gemini-2.0-flash")
-
 
 class Question(BaseModel):
     """Model for AI-generated questions"""
@@ -49,70 +47,130 @@ class QuestionResponse(BaseModel):
         from_attributes = True
 
 
-def get_category_prompt(category: str) -> str:
-    """Get specific prompt instructions based on question category"""
+def get_category_prompt(category: str, grade_level: int) -> str:
+    """Get specific prompt instructions based on question category and grade level"""
+
+    # Define grade band appropriate instructions
+    grade_guidance = ""
+    if 2 <= grade_level <= 5:  # Elementary
+        grade_guidance = """
+            - Use simple, direct language with 1-2 short sentences
+            - Vocabulary should be concrete and familiar to elementary students
+            - Questions should be answerable in 1-3 sentences
+            - Aim for a reading level 1-2 grades below the target grade
+        """
+    elif 6 <= grade_level <= 8:  # Middle School
+        grade_guidance = """
+            - Use clear language with 1-2 concise sentences
+            - Avoid complex clauses and academic jargon
+            - Questions should be answerable in 2-4 sentences
+            - Aim for a reading level at or slightly below the target grade
+        """
+    else:  # High School (9-12)
+        grade_guidance = """
+            - Use straightforward language with no more than 2 sentences
+            - Avoid unnecessarily sophisticated vocabulary
+            - Questions should be focused and specific
+            - Aim for a reading level appropriate to the target grade
+        """
+
+    # Define category-specific prompts
     prompts = {
-        "literal_basic": """
+        "literal_basic": f"""
             Create a basic comprehension question that:
-            - Tests understanding of explicitly stated information
-            - Focuses on main ideas or key details directly from the text
-            - Can be answered using specific words/phrases from the passage
-            - Is appropriate for the given grade level
+            - Asks directly about key information explicitly stated in the text
+            - Uses a single, clear sentence
+            - Can be answered by pointing to specific words or phrases in the text
+            
+            {grade_guidance}
+            
+            Example good questions:
+            - "What did [character] do when [event happened]?"
+            - "What is the main setting of this passage?"
+            - "According to the text, what caused [event]?"
         """,
-        "literal_detailed": """
+        "literal_detailed": f"""
             Create a detailed comprehension question that:
-            - Tests understanding of specific details and supporting information
-            - Requires connecting multiple explicit details from the text
-            - Focuses on how ideas are related or organized
-            - Matches the complexity appropriate for the grade level
+            - Asks about specific details from the text
+            - Uses a single, direct sentence
+            - Focuses on important supporting information
+            
+            {grade_guidance}
+            
+            Example good questions:
+            - "What evidence does the text provide to support [main idea]?"
+            - "What details does the author use to describe [element]?"
+            - "How does the passage explain the process of [topic]?"
         """,
-        "inferential_simple": """
+        "inferential_simple": f"""
             Create a simple inferential question that:
-            - Requires basic reasoning beyond the explicit text
-            - Asks students to make straightforward connections
-            - Tests understanding of cause and effect or basic relationships
-            - Is suitable for building initial inferential skills
+            - Asks about a straightforward conclusion not directly stated
+            - Uses a clear, focused sentence
+            - Can be answered by connecting information from the text
+            
+            {grade_guidance}
+            
+            Example good questions:
+            - "How might [character] feel about [event] based on the text?"
+            - "What is likely to happen next based on this passage?"
+            - "Why did [character] probably decide to [action]?"
         """,
-        "inferential_complex": """
-            Create a complex inferential question that:
-            - Requires deeper analysis and interpretation
-            - Tests understanding of themes, motives, or abstract concepts
-            - Asks students to synthesize information across the text
-            - Challenges students to think critically at their grade level
+        "inferential_complex": f"""
+            Create a thought-provoking but clear inferential question that:
+            - Asks about deeper meaning or connections
+            - Uses simple language despite testing complex thinking
+            - Remains focused on a specific aspect of the text
+            
+            {grade_guidance}
+            
+            Example good questions:
+            - "What lesson might the author want readers to learn from this passage?"
+            - "How does [character's] response to [situation] reveal their personality?"
+            - "What does [symbol/element] represent in this text?"
         """,
     }
+
     return prompts.get(
         category,
-        "Create a reading comprehension question appropriate for the text and grade level.",
+        f"Create a clear, focused reading question appropriate for grade {grade_level}. {grade_guidance}",
     )
 
 
 async def generate_ai_question(
     category: str, grade_level: int, content: str
 ) -> Question:
-    """Generate a question using the AI model"""
+    """Generate a question using the AI model with improved clarity and grade-level appropriateness"""
     try:
         agent = Agent(
             model=model,
             result_type=Question,
-            system_prompt="You are an AI reading comprehension question generator.",
+            system_prompt="You are an AI reading teacher creating clear, grade-appropriate questions.",
         )
 
         prompt = f"""
-        You are an experienced reading teacher creating a {category} question for grade {grade_level}.
+        You are creating a reading comprehension question for grade {grade_level} students.
         
         Text content: "{content}"
         
-        {get_category_prompt(category)}
+        {get_category_prompt(category, grade_level)}
         
-        Important guidelines:
-        - Question should be clear and unambiguous
+        IMPORTANT GUIDELINES:
+        - Keep the question SHORT (no more than 15-20 words)
+        - Use ONE sentence only
+        - Be direct and specific - avoid unnecessary words
+        - Make sure the question has a clear focus
+        - Use simple language that grade {grade_level} students will understand
+        - Avoid complex sentence structures with multiple clauses
+        - Questions must be answerable using the provided text
         - Avoid yes/no questions
-        - Use grade-appropriate vocabulary
-        - Focus on understanding rather than memorization
-        - Questions should be answerable using the provided text
         
-        Generate a single question that meets these criteria.
+        Before submitting your response, verify:
+        1. Is this question clear and focused?
+        2. Is it appropriate for grade {grade_level}?
+        3. Is it expressed in a single, concise sentence?
+        4. Would a grade {grade_level} student understand what is being asked?
+        
+        Generate a single, short question that meets these criteria.
         """
 
         result = await agent.run(prompt)
@@ -224,7 +282,7 @@ async def get_question(
         logger.error(f"Error generating/caching question: {str(e)}")
         # Fallback question if AI generation fails
         return (
-            f"Based on the text, explain the main concepts presented in this section.",
+            f"Based on the text, what is the main idea of this section?",
             False,
         )
 
