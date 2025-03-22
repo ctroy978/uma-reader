@@ -2,7 +2,6 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from pydantic import BaseModel, Field
-from typing import Optional, Tuple
 from datetime import datetime, timezone
 from pydantic_ai import Agent
 from pydantic_ai.models.gemini import GeminiModel
@@ -10,6 +9,8 @@ from dotenv import load_dotenv
 import uuid
 import logging
 import os
+from enum import Enum
+from typing import Optional, Tuple, Dict, List
 
 from database.session import get_db
 from database.models import ActiveAssessment, User, Text, Chunk, QuestionCache
@@ -169,6 +170,10 @@ async def generate_ai_question(
         2. Is it appropriate for grade {grade_level}?
         3. Is it expressed in a single, concise sentence?
         4. Would a grade {grade_level} student understand what is being asked?
+        5. Can this question be answered ONLY using the specific text provided?
+        6. Have you checked that any quantities mentioned are accurate (e.g., "three animals" only if exactly three are mentioned)?
+
+
         
         Generate a single, short question that meets these criteria.
         """
@@ -320,4 +325,131 @@ async def get_current_question(
         question_text=question_text,
         assessment_id=assessment_id,
         from_cache=from_cache,
+    )
+
+
+# Add these imports if they aren't already present
+from enum import Enum
+from typing import Optional, Tuple, Dict, List
+
+## Add these imports if they aren't already present
+from enum import Enum
+from typing import Optional, Tuple, Dict, List
+
+
+# Define pre-question types based on text type
+class PreQuestionType(str, Enum):
+    NARRATIVE = "NARRATIVE"
+    INFORMATIONAL = "INFORMATIONAL"
+    OTHER = "OTHER"
+
+
+# Pre-defined questions by text type
+PRE_QUESTIONS: Dict[str, List[str]] = {
+    "NARRATIVE": [
+        "Summarize what happens in this passage.",
+        "Briefly describe the key events in this section.",
+    ],
+    "INFORMATIONAL": [
+        "What is being explained in this section?",
+        "Summarize the key points presented in this passage.",
+        "What information does this section provide?",
+    ],
+    "OTHER": [
+        "Summarize the main ideas in this passage.",
+        "What is this section mainly about?",
+        "What are the key points from this section?",
+    ],
+}
+
+
+class PreQuestionResponse(BaseModel):
+    """Response model for pre-questions"""
+
+    question_text: str
+    assessment_id: str
+    is_pre_question: bool = True
+
+    class Config:
+        from_attributes = True
+
+
+async def get_pre_question(assessment_id: str, db: Session) -> str:
+    """
+    Get a pre-question for the given assessment
+
+    Args:
+        assessment_id: ID of the active assessment
+        db: Database session
+
+    Returns:
+        A pre-question text appropriate for the text type
+    """
+    assessment = (
+        db.query(ActiveAssessment)
+        .filter(
+            ActiveAssessment.id == assessment_id,
+            ActiveAssessment.is_active == True,
+            ActiveAssessment.completed == False,
+        )
+        .first()
+    )
+
+    if not assessment:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Active assessment not found"
+        )
+
+    text = db.query(Text).get(assessment.text_id)
+
+    if not text:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Text not found"
+        )
+
+    # Choose appropriate pre-question based on text type
+    text_type = text.type_name
+    # Map persuasive to informational for pre-questions
+    if text_type == "PERSUASIVE":
+        text_type = "INFORMATIONAL"
+    if text_type not in PRE_QUESTIONS:
+        text_type = "OTHER"
+
+    # Select a random question from the appropriate list
+    import random
+
+    question = random.choice(PRE_QUESTIONS[text_type])
+
+    logger.info(f"Generated pre-question for text type {text_type}: {question}")
+    return question
+
+
+@router.get("/pre-question/{assessment_id}", response_model=PreQuestionResponse)
+async def get_pre_question_endpoint(
+    assessment_id: str,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_user),
+):
+    """Get a pre-question for the current chunk to verify reading comprehension"""
+    assessment = (
+        db.query(ActiveAssessment)
+        .filter(
+            ActiveAssessment.id == assessment_id,
+            ActiveAssessment.student_id == user.id,
+            ActiveAssessment.is_active == True,
+            ActiveAssessment.completed == False,
+        )
+        .first()
+    )
+
+    if not assessment:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Active assessment not found"
+        )
+
+    pre_question_text = await get_pre_question(assessment_id, db)
+
+    return PreQuestionResponse(
+        question_text=pre_question_text,
+        assessment_id=assessment_id,
     )
