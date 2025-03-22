@@ -2,16 +2,24 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from pydantic import BaseModel, Field
-from typing import Optional
+from typing import Optional, Tuple
 from datetime import datetime, timezone
 from pydantic_ai import Agent
 from pydantic_ai.models.gemini import GeminiModel
 from dotenv import load_dotenv
 import logging
 import os
+import re
 
 from database.session import get_db
-from database.models import ActiveAssessment, User, Text, Chunk
+from database.models import (
+    ActiveAssessment,
+    User,
+    Text,
+    Chunk,
+    QuestionCache,
+    TeacherBypassCode,
+)
 from auth.middleware import require_user
 from .questions import get_question
 from .progression import update_category_on_result
@@ -247,7 +255,7 @@ async def evaluate_answer(
 ):
     """Evaluate a student's answer and provide feedback.
 
-    Handles both regular questions and pre-questions (basic comprehension checks).
+    Handles both regular questions, pre-questions, and teacher bypass codes.
     """
     # Get active assessment
     assessment = (
@@ -285,15 +293,74 @@ async def evaluate_answer(
             else False
         )
 
-        # Get AI evaluation with appropriate criteria
-        evaluation = await evaluate_answer_with_ai(
-            context=current_chunk.content,
-            question=submission.question,
-            answer=submission.answer,
-            category=assessment.current_category,
-            grade_level=grade_level,
-            is_pre_question=is_pre_question,
-        )
+        # Check if the answer is a bypass code
+        bypass_pattern = r"^!BYPASS:(\d{4})$"
+        match = re.match(bypass_pattern, submission.answer.strip())
+
+        if match:
+            # Extract bypass code
+            bypass_code = match.group(1)
+
+            # Find teacher with this bypass code
+            teacher_bypass = (
+                db.query(TeacherBypassCode)
+                .filter(
+                    TeacherBypassCode.bypass_code == bypass_code,
+                    TeacherBypassCode.is_active == True,
+                    TeacherBypassCode.is_deleted == False,
+                )
+                .first()
+            )
+
+            if teacher_bypass:
+                # Log the bypass event
+                logger.info(
+                    f"Teacher bypass used: Student {user.id}, Assessment {assessment_id}, "
+                    f"Teacher {teacher_bypass.teacher_id}, Question: {submission.question}"
+                )
+
+                # If this is a cached question and not a pre-question, remove it from cache
+                if not is_pre_question:
+                    cached_question = (
+                        db.query(QuestionCache)
+                        .filter(
+                            QuestionCache.chunk_id == current_chunk.id,
+                            QuestionCache.question_category
+                            == assessment.current_category,
+                            QuestionCache.grade_level == grade_level,
+                            QuestionCache.is_deleted == False,
+                        )
+                        .first()
+                    )
+
+                    if cached_question:
+                        # Soft delete the cached question
+                        cached_question.is_deleted = True
+                        logger.info(
+                            f"Removed cached question {cached_question.id} due to teacher bypass"
+                        )
+
+                # Set evaluation to correct when using bypass
+                evaluation = AIEvaluation(
+                    is_correct=True,
+                    feedback="Answer accepted via teacher bypass. You may proceed to the next section.",
+                )
+            else:
+                # Invalid bypass code
+                evaluation = AIEvaluation(
+                    is_correct=False,
+                    feedback="Invalid teacher bypass code. Please try again or contact your teacher for assistance.",
+                )
+        else:
+            # Regular evaluation process
+            evaluation = await evaluate_answer_with_ai(
+                context=current_chunk.content,
+                question=submission.question,
+                answer=submission.answer,
+                category=assessment.current_category,
+                grade_level=grade_level,
+                is_pre_question=is_pre_question,
+            )
 
         # Initialize response parameters
         next_question = None
@@ -302,7 +369,7 @@ async def evaluate_answer(
         # Handle pre-questions differently from regular questions
         if is_pre_question:
             # For pre-questions:
-            # - If correct, allow progress to regular question
+            # - If correct or bypass, allow progress to regular question
             # - If incorrect, no progression, no category change
             can_progress = evaluation.is_correct
 
@@ -324,7 +391,9 @@ async def evaluate_answer(
             original_category = assessment.current_category
 
             # Update category based on correctness
-            update_category_on_result(assessment, evaluation.is_correct)
+            # Skip category update if it's a bypass (already marked correct)
+            if not match or not teacher_bypass:
+                update_category_on_result(assessment, evaluation.is_correct)
 
             # If answer is wrong, always generate new question
             if not evaluation.is_correct:
@@ -357,3 +426,39 @@ async def evaluate_answer(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error evaluating answer: {str(e)}",
         )
+
+
+async def validate_bypass_code(answer: str, db: Session) -> Tuple[bool, Optional[str]]:
+    """
+    Validate if the answer contains a valid teacher bypass code.
+
+    Format: !BYPASS:XXXX where XXXX is a 4-digit code
+
+    Returns:
+        Tuple[bool, Optional[str]]: (is_valid, teacher_id if valid else None)
+    """
+    # Check if answer follows bypass format
+    bypass_pattern = r"^!BYPASS:(\d{4})$"
+    match = re.match(bypass_pattern, answer.strip())
+
+    if not match:
+        return False, None
+
+    # Extract bypass code
+    bypass_code = match.group(1)
+
+    # Find teacher with this bypass code
+    teacher_bypass = (
+        db.query(TeacherBypassCode)
+        .filter(
+            TeacherBypassCode.bypass_code == bypass_code,
+            TeacherBypassCode.is_active == True,
+            TeacherBypassCode.is_deleted == False,
+        )
+        .first()
+    )
+
+    if teacher_bypass:
+        return True, teacher_bypass.teacher_id
+
+    return False, None

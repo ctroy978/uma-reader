@@ -15,6 +15,7 @@ from database.models.completion import Completion, CompletionQuestion
 from .token import RefreshToken
 from .question_cache import QuestionCache
 from .whitelist import EmailWhitelist, WhitelistType
+from .teacher_bypass import TeacherBypassCode
 
 
 # Import SimplifiedChunk after all other models to avoid circular imports
@@ -39,4 +40,5 @@ __all__ = [
     "QuestionCache",
     "EmailWhitelist",
     "WhitelistType",
+    "TeacherBypassCode",
 ]

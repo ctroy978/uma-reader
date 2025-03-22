@@ -29,6 +29,12 @@ class User(Base, TimestampMixin, SoftDeleteMixin):
     completions = relationship(
         "Completion", back_populates="student", foreign_keys="[Completion.student_id]"
     )
+    bypass_code = relationship(
+        "TeacherBypassCode",
+        back_populates="teacher",
+        uselist=False,
+        cascade="all, delete-orphan",
+    )
 
     @validates("email")
     def validate_email(self, key, email):
