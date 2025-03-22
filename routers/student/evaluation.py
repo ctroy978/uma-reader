@@ -100,7 +100,7 @@ def build_evaluation_prompt(
             - Answer is CORRECT if it:
               1. Accurately captures an actual element, theme, or event from the specific passage
               2. Shows evidence the student has genuinely read THIS passage (not just making assumptions)
-              3. Contains at least one accurate reference to the content (character, setting, action, or theme)
+              3. Contains at least two accurate references to the content (character, setting, action, theme, main idea, or questions asked)
               4. Would only make sense as a response to THIS passage, not to any random text
               
             - Answer is INCORRECT if it:
