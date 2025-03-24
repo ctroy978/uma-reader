@@ -39,6 +39,7 @@ from routers.admin.question_cache import router as question_cache_router
 from services.whitelist_service import WhitelistService
 from routers.admin.database import router as database_admin_router
 from routers.teacher.bypass import router as teacher_bypass_router
+from routers.student.completion_test_reset import router as completion_test_reset_router
 
 
 load_dotenv()
@@ -203,6 +204,7 @@ app.include_router(cache_admin_router, prefix="/admin/cache")
 app.include_router(question_cache_router, prefix="/admin/question-cache")
 app.include_router(database_admin_router, prefix="/admin")
 app.include_router(teacher_bypass_router, prefix="/teacher")
+app.include_router(completion_test_reset_router, prefix="/completion-test")
 
 
 from routers.admin.cache import (
