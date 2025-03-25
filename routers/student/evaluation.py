@@ -207,7 +207,7 @@ def build_evaluation_prompt(
     
     Keep feedback concise, specific, and positive. Acknowledge what the student did well even when giving critical feedback.
     
-    {'For pre-questions, carefully verify that the student\'s answer mentions elements ACTUALLY PRESENT in the passage, not just plausible guesses.' if is_pre_question else ''}
+    {'For pre-questions, carefully verify that the students answer mentions elements ACTUALLY PRESENT in the passage, not just plausible guesses.' if is_pre_question else ''}
     """
 
 
