@@ -343,3 +343,26 @@ async def get_assessment_status(
         "completion_id": completion.id if completion else None,
         "completion_status": completion.test_status if completion else None,
     }
+
+
+@router.get("/text/{text_id}/chunks", response_model=dict)
+async def get_text_chunk_count(
+    text_id: str, db: Session = Depends(get_db), user: User = Depends(require_user)
+):
+    """Get the total number of chunks for a text"""
+
+    # Verify text exists
+    text = db.query(Text).filter(Text.id == text_id, Text.is_deleted == False).first()
+    if not text:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Text not found"
+        )
+
+    # Count chunks - either directly or by following the chunk chain
+    total_chunks = (
+        db.query(Chunk)
+        .filter(Chunk.text_id == text_id, Chunk.is_deleted == False)
+        .count()
+    )
+
+    return {"total_chunks": total_chunks}
