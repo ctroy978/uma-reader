@@ -366,3 +366,72 @@ async def get_text_chunk_count(
     )
 
     return {"total_chunks": total_chunks}
+
+
+@router.get("/text/{text_id}/chunk-position/{chunk_id}", response_model=dict)
+async def get_chunk_position(
+    text_id: str,
+    chunk_id: str,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_user),
+):
+    """Get the position of a chunk within its text"""
+
+    # Verify text exists
+    text = db.query(Text).filter(Text.id == text_id, Text.is_deleted == False).first()
+    if not text:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Text not found"
+        )
+
+    # Verify chunk exists and belongs to the text
+    target_chunk = (
+        db.query(Chunk)
+        .filter(
+            Chunk.id == chunk_id, Chunk.text_id == text_id, Chunk.is_deleted == False
+        )
+        .first()
+    )
+
+    if not target_chunk:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Chunk not found"
+        )
+
+    # Find the first chunk of the text
+    first_chunk = (
+        db.query(Chunk)
+        .filter(
+            Chunk.text_id == text_id, Chunk.is_first == True, Chunk.is_deleted == False
+        )
+        .first()
+    )
+
+    if not first_chunk:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Text structure is corrupted"
+        )
+
+    # Calculate position by following the chain from first chunk
+    position = 1
+    current_chunk = first_chunk
+
+    while current_chunk and current_chunk.id != chunk_id:
+        if not current_chunk.next_chunk_id:
+            # We've reached the end without finding our chunk
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="Chunk not in sequence"
+            )
+
+        current_chunk = db.query(Chunk).get(current_chunk.next_chunk_id)
+        if current_chunk and not current_chunk.is_deleted:
+            position += 1
+
+    # Count total chunks for the text (reusing existing logic)
+    total_chunks = (
+        db.query(Chunk)
+        .filter(Chunk.text_id == text_id, Chunk.is_deleted == False)
+        .count()
+    )
+
+    return {"position": position, "total_chunks": total_chunks}
