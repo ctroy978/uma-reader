@@ -6,7 +6,7 @@ from typing import List
 from datetime import datetime, timezone, timedelta
 
 from database.session import get_db
-from database.models import Completion, ActiveAssessment, User, Text
+from database.models import Completion, ActiveAssessment, User, Text, CompletionQuestion
 from auth.middleware import require_user
 
 router = APIRouter(tags=["completion-tests"])
@@ -42,12 +42,15 @@ async def get_available_completions(
         cutoff_date = current_time - timedelta(days=14)
 
         # Get available completions with their associated texts
+        # IMPORTANT: Now including both "pending" AND "in_progress" tests
         completions = (
             db.query(Completion, Text.title.label("text_title"))
             .join(Text, Completion.text_id == Text.id)
             .filter(
                 Completion.student_id == user.id,
-                Completion.test_status == "pending",
+                Completion.test_status.in_(
+                    ["pending", "in_progress"]
+                ),  # Include in-progress tests
                 Completion.is_deleted == False,
                 Completion.completion_triggered_at >= cutoff_date,
             )
@@ -91,13 +94,12 @@ async def start_completion_test(
     db: Session = Depends(get_db),
     user: User = Depends(require_user),
 ):
-    """Start a completion test"""
+    """Start a completion test, resetting it if it was previously in progress"""
     completion = (
         db.query(Completion)
         .filter(
             Completion.id == completion_id,
             Completion.student_id == user.id,
-            Completion.test_status == "pending",
             Completion.is_deleted == False,
         )
         .first()
@@ -123,8 +125,38 @@ async def start_completion_test(
         )
 
     try:
-        # Update completion status
+        # If the test was already in progress, reset it
+        if completion.test_status == "in_progress":
+            # Delete any existing questions
+            questions = (
+                db.query(CompletionQuestion)
+                .filter(CompletionQuestion.completion_id == completion_id)
+                .all()
+            )
+
+            for question in questions:
+                db.delete(question)
+
+            # Reset the completion status
+            completion.test_status = "pending"
+            completion.test_started_at = None
+            completion.overall_score = 0.0
+            completion.total_questions = 0
+            completion.correct_answers = 0
+            completion.literal_basic_success = 0.0
+            completion.literal_detailed_success = 0.0
+            completion.vocabulary_success = 0.0
+            completion.inferential_simple_success = 0.0
+            completion.inferential_complex_success = 0.0
+            completion.structural_basic_success = 0.0
+            completion.structural_advanced_success = 0.0
+
+            # Log the reset
+            print(f"Reset in-progress test {completion_id} for user {user.id}")
+
+        # Update completion status to in_progress
         completion.test_status = "in_progress"
+        completion.test_started_at = current_time
         completion.updated_at = current_time
         db.commit()
 

@@ -61,6 +61,27 @@ class TestSummary(BaseModel):
 router = APIRouter(tags=["completion-tests"])
 
 
+async def reset_test_questions(completion_id: str, db: Session):
+    """Helper function to delete all existing questions for a test"""
+    try:
+        # Find and delete all existing questions
+        questions = (
+            db.query(CompletionQuestion)
+            .filter(CompletionQuestion.completion_id == completion_id)
+            .all()
+        )
+
+        for question in questions:
+            db.delete(question)
+
+        db.commit()
+        return True
+    except Exception as e:
+        db.rollback()
+        print(f"Error resetting test questions: {str(e)}")
+        return False
+
+
 @router.post("/{completion_id}/initialize", response_model=dict)
 async def initialize_completion_test(
     completion_id: str,
@@ -92,23 +113,9 @@ async def initialize_completion_test(
                 detail="Completion test not found or not in progress",
             )
 
-        # Check if questions already exist for this completion
-        print("DEBUG: Checking for existing questions")
-        existing_questions = (
-            db.query(CompletionQuestion)
-            .filter(CompletionQuestion.completion_id == completion_id)
-            .count()
-        )
-
-        print(f"DEBUG: Found {existing_questions} existing questions")
-
-        if existing_questions > 0:
-            # Questions already generated, return the first one
-            return {
-                "message": "Questions already generated for this test",
-                "completion_id": completion_id,
-                "questions_count": existing_questions,
-            }
+        # Reset any existing questions to start fresh
+        await reset_test_questions(completion_id, db)
+        print("DEBUG: Reset existing questions for a fresh start")
 
         # Fetch the full text content
         print("DEBUG: Fetching text content")
