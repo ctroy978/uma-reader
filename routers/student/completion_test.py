@@ -915,3 +915,88 @@ async def get_next_question(
 
     # If we get here, there's no next question
     return {"next_question_id": None}
+
+
+# Add this endpoint to routers/student/completion_test.py
+
+
+@router.get("/{completion_id}/text-chunks", response_model=dict)
+async def get_completion_text_chunks(
+    completion_id: str,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_user),
+):
+    """Get all text chunks for a completion test"""
+    try:
+        # Verify completion record exists and belongs to the user
+        completion = (
+            db.query(Completion)
+            .filter(
+                Completion.id == completion_id,
+                Completion.student_id == user.id,
+                Completion.is_deleted == False,
+            )
+            .first()
+        )
+
+        if not completion:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Completion test not found",
+            )
+
+        # Get the text
+        text = db.query(Text).filter(Text.id == completion.text_id).first()
+        if not text:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Text not found",
+            )
+
+        # Get all chunks in order
+        chunks = []
+        first_chunk = (
+            db.query(Chunk)
+            .filter(
+                Chunk.text_id == text.id,
+                Chunk.is_first == True,
+                Chunk.is_deleted == False,
+            )
+            .first()
+        )
+
+        if not first_chunk:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Text has no content",
+            )
+
+        # Follow the chain of chunks
+        current_chunk = first_chunk
+        chunk_index = 1
+        while current_chunk:
+            chunks.append(
+                {
+                    "id": current_chunk.id,
+                    "content": current_chunk.content,
+                    "index": chunk_index,
+                }
+            )
+            chunk_index += 1
+
+            if current_chunk.next_chunk_id:
+                current_chunk = db.query(Chunk).get(current_chunk.next_chunk_id)
+            else:
+                current_chunk = None
+
+        return {"text_title": text.title, "chunks": chunks}
+    except HTTPException:
+        # Re-raise HTTP exceptions
+        raise
+    except Exception as e:
+        # Log and convert other exceptions to 500 errors
+        print(f"Error fetching text chunks: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error fetching text chunks: {str(e)}",
+        )
