@@ -186,7 +186,8 @@ async def initialize_completion_test(
         print(f"DEBUG: Category names: {category_names}")
 
         # Determine the number of questions (between 5 and 10)
-        question_count = min(10, max(5, len(chunks) // 2))
+        # question_count = min(10, max(5, len(chunks) // 2))
+        question_count = min(10, 5 + max(0, len(chunks) - 3))
         print(f"DEBUG: Will generate {question_count} questions")
 
         # Check if API key is configured
