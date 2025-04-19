@@ -1,9 +1,10 @@
-# routers/teacher/reports.py
-from fastapi import APIRouter, Depends, HTTPException, status
+# app/routers/teacher/reports.py
+from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session
+from sqlalchemy import and_, or_, desc, asc
 from pydantic import BaseModel, Field
 from typing import List, Dict, Any, Optional
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 from pydantic_ai import Agent
 from pydantic_ai.models.gemini import GeminiModel
 from dotenv import load_dotenv
@@ -16,8 +17,6 @@ from auth.middleware import require_user
 load_dotenv()
 model = GeminiModel("gemini-2.0-flash")
 
-# Change this to have the CORRECT router definition
-# Change from prefix="" to tags only
 router = APIRouter(tags=["teacher-reports"])
 
 # =============================================================================
@@ -334,20 +333,138 @@ def analyze_text_performance_for_graph(
     return {"by_genre": genre_scores, "by_type": type_scores, "by_grade": grade_scores}
 
 
-# Single test endpoints
-# Change from @router.get("/student/{student_id}/report/{completion_id}") to:
+@router.get("")
+async def get_all_reports(
+    text_title: Optional[str] = Query(None, description="Filter by text title"),
+    grade_level: Optional[int] = Query(None, description="Filter by text grade level"),
+    date_from: Optional[datetime] = Query(
+        None, description="Filter by date range start"
+    ),
+    date_to: Optional[datetime] = Query(None, description="Filter by date range end"),
+    sort_by: Optional[str] = Query("completed_at", description="Field to sort by"),
+    sort_order: Optional[str] = Query("desc", description="Sort order (asc or desc)"),
+    db: Session = Depends(get_db),
+    teacher: User = Depends(require_teacher),
+):
+    """Get all available reports for a teacher with filtering options
+
+    NOTE: When cumulative reports are disabled via the CUMULATIVE_REPORTS_ENABLED
+    configuration flag at the top of this file, this endpoint will only return
+    single test reports and not include any cumulative reports in the list.
+    """
+    try:
+        # Base query to find completions for texts created by the current teacher
+        query = (
+            db.query(Completion, Text, User)
+            .join(Text, Completion.text_id == Text.id)
+            .join(User, Completion.student_id == User.id)
+            .filter(
+                Text.teacher_id == teacher.id,  # Filter by teacher_id
+                Completion.is_deleted == False,
+                Completion.test_status == "completed",
+                Text.is_deleted == False,
+            )
+        )
+
+        # Apply text title filter if provided
+        if text_title:
+            query = query.filter(Text.title.ilike(f"%{text_title}%"))
+
+        # Apply grade level filter if provided
+        if grade_level:
+            query = query.filter(Text.grade_level == grade_level)
+
+        # Apply date range filters if provided
+        if date_from:
+            query = query.filter(Completion.completed_at >= date_from)
+        if date_to:
+            query = query.filter(Completion.completed_at <= date_to)
+
+        # Apply sorting
+        if sort_order.lower() == "asc":
+            query = query.order_by(asc(getattr(Completion, sort_by)))
+        else:
+            query = query.order_by(desc(getattr(Completion, sort_by)))
+
+        # Execute query
+        results = query.all()
+
+        # Format response
+        reports = []
+        for completion, text, student in results:
+            # Add single test report
+            reports.append(
+                {
+                    "id": completion.id,
+                    "report_type": "single_test",
+                    "student_id": student.id,
+                    "student_name": student.full_name,
+                    "grade_level": text.grade_level,
+                    "text_title": text.title,
+                    "text_type": text.type_name,
+                    "completed_at": completion.completed_at,
+                    "overall_score": completion.overall_score,
+                }
+            )
+
+        # Only add cumulative reports if they are enabled
+        if CUMULATIVE_REPORTS_ENABLED:
+            # Add cumulative reports for users with enough data
+            student_ids = set(r["student_id"] for r in reports)
+
+            for student_id in student_ids:
+                student_reports = [r for r in reports if r["student_id"] == student_id]
+
+                if len(student_reports) >= 7:  # Minimum for cumulative reports
+                    user = db.query(User).filter(User.id == student_id).first()
+                    if not user:
+                        continue
+
+                    # Calculate date range and average score
+                    completion_dates = [r["completed_at"] for r in student_reports]
+                    date_range = (max(completion_dates) - min(completion_dates)).days
+                    avg_score = sum(r["overall_score"] for r in student_reports) / len(
+                        student_reports
+                    )
+
+                    reports.append(
+                        {
+                            "id": f"cumulative-{student_id}",
+                            "report_type": "cumulative",
+                            "student_id": student_id,
+                            "student_name": user.full_name,
+                            "grade_level": student_reports[0]["grade_level"],
+                            "tests_count": len(student_reports),
+                            "days_covered": date_range,
+                            "completed_at": max(completion_dates),
+                            "overall_score": avg_score,
+                        }
+                    )
+
+        return reports
+    except Exception as e:
+        import traceback
+
+        print(f"DEBUG: Exception caught: {str(e)}")
+        print(traceback.format_exc())
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error fetching reports: {str(e)}",
+        )
+
+
 @router.get("/student/{student_id}/report/{completion_id}")
 async def get_student_single_report(
     student_id: str,
     completion_id: str,
     db: Session = Depends(get_db),
     teacher: User = Depends(require_teacher),
-    regenerate: bool = False,  # Add this parameter
+    regenerate: bool = False,
 ):
     """Generate a single test report with text analysis for a student or teacher"""
 
     try:
-        # Your existing verification code remains unchanged
+        # Verify the user exists
         user = (
             db.query(User)
             .filter(
@@ -383,6 +500,13 @@ async def get_student_single_report(
         if not text:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND, detail="Text not found"
+            )
+
+        # Verify the teacher has access to this text
+        if text.teacher_id != teacher.id and teacher.role_name != "ADMIN":
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You do not have access to this text's reports",
             )
 
         # Check if analysis exists and we're not forcing regeneration
@@ -399,17 +523,34 @@ async def get_student_single_report(
             db.commit()
             from_cache = False
 
+        # Get the questions for this completion
+        question_details = []
+        for q in completion.questions:
+            question_details.append(
+                {
+                    "id": q.id,
+                    "category": q.category,
+                    "difficulty": q.difficulty,
+                    "question_text": q.question_text,
+                    "student_answer": q.student_answer,
+                    "is_correct": q.is_correct,
+                    "time_spent_seconds": q.time_spent_seconds or 0,
+                }
+            )
+
         return {
             "student_name": user.full_name,
             "report_type": "single_test",
             "analysis": analysis.dict(),
             "text_title": text.title,
             "text_grade_level": text.grade_level,
+            "text_type": text.type_name,
             "completion_date": completion.completed_at,
             "overall_score": completion.overall_score,
             "total_questions": completion.total_questions,
             "correct_answers": completion.correct_answers,
-            "from_cache": from_cache,  # Add this field
+            "from_cache": from_cache,
+            "questions": question_details,  # Added question details
         }
     except Exception as e:
         import traceback
@@ -419,380 +560,4 @@ async def get_student_single_report(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error generating report: {str(e)}",
-        )
-
-
-@router.get(
-    "/student/{student_id}/report/{completion_id}/graph-data",
-    response_model=SingleTestGraphData,
-)
-async def get_student_single_report_graph_data(
-    student_id: str,
-    completion_id: str,
-    db: Session = Depends(get_db),
-    teacher: User = Depends(require_teacher),
-):
-    """Get graph data for a single test report"""
-    try:
-        # Verify the user exists (allow both students and teachers)
-        user = (
-            db.query(User)
-            .filter(
-                User.id == student_id,
-                (User.role_name == "STUDENT") | (User.role_name == "TEACHER"),
-                User.is_deleted == False,
-            )
-            .first()
-        )
-        if not user:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND, detail="User not found"
-            )
-
-        # Get the completion record
-        completion = (
-            db.query(Completion)
-            .filter(
-                Completion.id == completion_id,
-                Completion.student_id == student_id,
-                Completion.is_deleted == False,
-            )
-            .first()
-        )
-        if not completion:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Completion record not found",
-            )
-
-        # Get the associated text
-        text = db.query(Text).filter(Text.id == completion.text_id).first()
-        if not text:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND, detail="Text not found"
-            )
-
-        # Format the category performance data for visualization
-        categories = []
-        for category in [
-            "literal_basic",
-            "literal_detailed",
-            "vocabulary",
-            "inferential_simple",
-            "inferential_complex",
-            "structural_basic",
-            "structural_advanced",
-        ]:
-            score = getattr(completion, f"{category}_success", 0)
-            # Use the correct field based on your schema
-            attempts = getattr(completion, "total_questions", 0)
-
-            if score > 0:  # Only include categories that were tested
-                categories.append(
-                    CategoryPerformance(
-                        category=category, score=score, attempts=attempts
-                    )
-                )
-
-        # Format text metadata for visualization context
-        text_metadata = {
-            "title": text.title,
-            "grade_level": text.grade_level,
-            "form": text.form_name,
-            "type": text.type_name,
-            "genres": (
-                [g.genre_name for g in text.genres] if hasattr(text, "genres") else []
-            ),
-        }
-
-        return SingleTestGraphData(categories=categories, text_metadata=text_metadata)
-    except Exception as e:
-        import traceback
-
-        print(f"DEBUG: Exception caught: {str(e)}")
-        print(traceback.format_exc())
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error generating graph data: {str(e)}",
-        )
-
-
-# Cumulative report endpoints
-@router.get("/student/{student_id}/cumulative-report")
-async def get_student_cumulative_report(
-    student_id: str,
-    db: Session = Depends(get_db),
-    teacher: User = Depends(require_teacher),
-):
-    """Generate a cumulative text report for a student or teacher
-
-    NOTE: Cumulative reports are currently disabled via the CUMULATIVE_REPORTS_ENABLED
-    configuration flag at the top of this file. When the flag is set to False,
-    this endpoint will return an error message indicating that cumulative reports
-    are unavailable, regardless of how many completed tests a student has.
-    """
-    try:
-        # Verify the user exists (allow both students and teachers)
-        user = (
-            db.query(User)
-            .filter(
-                User.id == student_id,
-                (User.role_name == "STUDENT") | (User.role_name == "TEACHER"),
-                User.is_deleted == False,
-            )
-            .first()
-        )
-        if not user:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND, detail="User not found"
-            )
-
-        # Get all completions for this user
-        completions = (
-            db.query(Completion)
-            .filter(
-                Completion.student_id == student_id,
-                Completion.is_deleted == False,
-                Completion.test_status == "completed",
-            )
-            .order_by(Completion.completed_at)
-            .all()
-        )
-
-        # Check if cumulative reports are enabled and if we have enough data
-        if not CUMULATIVE_REPORTS_ENABLED or len(completions) < 7:
-            return {
-                "student_name": user.full_name,
-                "report_type": "cumulative",
-                "error": "Cumulative reports are currently unavailable.",
-                "current_tests": len(completions),
-            }
-
-        # Get all associated texts
-        text_ids = [c.text_id for c in completions]
-        texts = db.query(Text).filter(Text.id.in_(text_ids)).all()
-
-        # Generate the cumulative report
-        analysis = await generate_cumulative_analysis(completions, texts)
-
-        return {
-            "student_name": user.full_name,
-            "report_type": "cumulative",
-            "analysis": analysis.dict(),
-            "total_tests": len(completions),
-            "date_range": {
-                "start": completions[0].completed_at,
-                "end": completions[-1].completed_at,
-            },
-        }
-    except Exception as e:
-        import traceback
-
-        print(f"DEBUG: Exception caught: {str(e)}")
-        print(traceback.format_exc())
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error generating cumulative report: {str(e)}",
-        )
-
-
-@router.get(
-    "/student/{student_id}/cumulative-report/graph-data",
-    response_model=CumulativeGraphData,
-)
-async def get_student_cumulative_report_graph_data(
-    student_id: str,
-    db: Session = Depends(get_db),
-    teacher: User = Depends(require_teacher),
-):
-    """Get graph data for cumulative reports
-
-    NOTE: Cumulative reports are currently disabled via the CUMULATIVE_REPORTS_ENABLED
-    configuration flag at the top of this file. When the flag is set to False,
-    this endpoint will return an HTTP 400 error indicating that cumulative reports
-    are unavailable, regardless of how many completed tests a student has.
-    """
-    try:
-        # Verify the user exists (allow both students and teachers)
-        user = (
-            db.query(User)
-            .filter(
-                User.id == student_id,
-                (User.role_name == "STUDENT") | (User.role_name == "TEACHER"),
-                User.is_deleted == False,
-            )
-            .first()
-        )
-        if not user:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND, detail="User not found"
-            )
-
-        # Get all completions for this user
-        completions = (
-            db.query(Completion)
-            .filter(
-                Completion.student_id == student_id,
-                Completion.is_deleted == False,
-                Completion.test_status == "completed",
-            )
-            .order_by(Completion.completed_at)
-            .all()
-        )
-
-        # Check if cumulative reports are enabled and if we have enough data
-        if not CUMULATIVE_REPORTS_ENABLED or len(completions) < 7:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Cumulative reports are currently unavailable.",
-            )
-
-        # Get all associated texts
-        text_ids = [c.text_id for c in completions]
-        texts = db.query(Text).filter(Text.id.in_(text_ids)).all()
-
-        # Prepare progression data points
-        progression = []
-        for completion in completions:
-            # Find the matching text
-            text = next((t for t in texts if t.id == completion.text_id), None)
-            if not text:
-                continue
-
-            progression.append(
-                ProgressionPoint(
-                    date=completion.completed_at,
-                    level=completion.final_test_level,
-                    score=completion.overall_score,
-                    text_id=completion.text_id,
-                    text_title=text.title,
-                )
-            )
-
-        # Calculate category trends over time
-        category_trends = {}
-        for category in [
-            "literal_basic",
-            "literal_detailed",
-            "vocabulary",
-            "inferential_simple",
-            "inferential_complex",
-            "structural_basic",
-            "structural_advanced",
-        ]:
-            category_trends[category] = [
-                getattr(c, f"{category}_success", 0) for c in completions
-            ]
-
-        # Analyze performance by text attributes
-        text_performance = analyze_text_performance_for_graph(completions, texts)
-
-        return CumulativeGraphData(
-            progression=progression,
-            category_trends=category_trends,
-            text_performance=text_performance,
-        )
-    except Exception as e:
-        import traceback
-
-        print(f"DEBUG: Exception caught: {str(e)}")
-        print(traceback.format_exc())
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error generating cumulative graph data: {str(e)}",
-        )
-
-
-# Root endpoint - change from @router.get("/") to:
-@router.get("")
-async def get_all_reports(
-    db: Session = Depends(get_db),
-    teacher: User = Depends(require_teacher),
-):
-    """Get all available reports for a teacher
-
-    NOTE: When cumulative reports are disabled via the CUMULATIVE_REPORTS_ENABLED
-    configuration flag at the top of this file, this endpoint will only return
-    single test reports and not include any cumulative reports in the list.
-    """
-    try:
-        # Find all completed assessments
-        completions = (
-            db.query(Completion)
-            .filter(
-                Completion.is_deleted == False,
-                Completion.test_status == "completed",
-            )
-            .all()
-        )
-
-        reports = []
-        for completion in completions:
-            # Get user (student or teacher)
-            user = db.query(User).filter(User.id == completion.student_id).first()
-            if not user:
-                continue
-
-            # Get text
-            text = db.query(Text).filter(Text.id == completion.text_id).first()
-            if not text:
-                continue
-
-            # Add single test report
-            reports.append(
-                {
-                    "id": completion.id,
-                    "report_type": "single_test",
-                    "student_id": user.id,
-                    "student_name": user.full_name,
-                    "grade_level": getattr(user, "grade_level", 0),
-                    "text_title": text.title,
-                    "text_type": text.type_name,
-                    "completed_at": completion.completed_at,
-                    "overall_score": completion.overall_score,
-                }
-            )
-
-        # Only add cumulative reports if they are enabled
-        if CUMULATIVE_REPORTS_ENABLED:
-            # Add cumulative reports for users with enough data
-            for student_id in set(c.student_id for c in completions):
-                student_completions = [
-                    c for c in completions if c.student_id == student_id
-                ]
-                if len(student_completions) >= 7:  # Minimum for cumulative reports
-                    user = db.query(User).filter(User.id == student_id).first()
-                    if not user:
-                        continue
-
-                    # Calculate date range and average score
-                    completion_dates = [c.completed_at for c in student_completions]
-                    date_range = (max(completion_dates) - min(completion_dates)).days
-                    avg_score = sum(c.overall_score for c in student_completions) / len(
-                        student_completions
-                    )
-
-                    reports.append(
-                        {
-                            "id": f"cumulative-{student_id}",
-                            "report_type": "cumulative",
-                            "student_id": student_id,
-                            "student_name": user.full_name,
-                            "grade_level": getattr(user, "grade_level", 0),
-                            "tests_count": len(student_completions),
-                            "days_covered": date_range,
-                            "completed_at": max(completion_dates),
-                            "overall_score": avg_score,
-                        }
-                    )
-
-        return reports
-    except Exception as e:
-        import traceback
-
-        print(f"DEBUG: Exception caught: {str(e)}")
-        print(traceback.format_exc())
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error fetching reports: {str(e)}",
         )
