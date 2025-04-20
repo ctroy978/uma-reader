@@ -33,6 +33,8 @@ router = APIRouter(tags=["teacher-reports"])
 # =============================================================================
 CUMULATIVE_REPORTS_ENABLED = False  # Temporarily disable cumulative reports
 
+MIN_NUMBER_COMPLETIONS = 3
+
 
 # Pydantic models for AI responses
 class SingleTestAnalysis(BaseModel):
@@ -415,7 +417,9 @@ async def get_all_reports(
             for student_id in student_ids:
                 student_reports = [r for r in reports if r["student_id"] == student_id]
 
-                if len(student_reports) >= 7:  # Minimum for cumulative reports
+                if (
+                    len(student_reports) >= MIN_NUMBER_COMPLETIONS
+                ):  # Minimum for cumulative reports
                     user = db.query(User).filter(User.id == student_id).first()
                     if not user:
                         continue
