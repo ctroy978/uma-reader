@@ -186,7 +186,6 @@ async def initialize_completion_test(
         print(f"DEBUG: Category names: {category_names}")
 
         # Determine the number of questions (between 5 and 10)
-        # question_count = min(10, max(5, len(chunks) // 2))
         question_count = min(10, 5 + max(0, len(chunks) - 3))
         print(f"DEBUG: Will generate {question_count} questions")
 
@@ -213,7 +212,7 @@ async def initialize_completion_test(
                 detail=f"Error initializing Gemini model: {str(e)}",
             )
 
-        # Create a system prompt
+        # Create a system prompt with clear formatting instructions
         system_prompt = f"""
         You are an expert reading assessment system. 
         Based on the text provided, generate {question_count} reading comprehension questions.
@@ -224,75 +223,135 @@ async def initialize_completion_test(
         3. Include a mix of question categories: {', '.join(category_names)}
         4. Be appropriate for grade level {text.grade_level}
         
-        Format each question as a JSON object with:
-        - question_text: The actual question
-        - category: One of the categories listed above
-        - difficulty: "basic", "intermediate", or "advanced"
+        IMPORTANT: Format your response as a properly formatted JSON array of objects.
+        Each question object MUST include these exact field names:
+        - "question_text": The actual question (string)
+        - "category": One of the categories listed above (string)
+        - "difficulty": Either "basic", "intermediate", or "advanced" (string)
         
-        Return ONLY a JSON array of these question objects.
+        Example of correct format:
+        [
+          {{
+            "question_text": "What is the main character's name?",
+            "category": "literal_basic",
+            "difficulty": "basic"
+          }},
+          {{
+            "question_text": "Why did the author use repetition in paragraph 3?",
+            "category": "structural_advanced", 
+            "difficulty": "advanced"
+          }}
+        ]
+        
+        Return ONLY valid JSON. Do not include any explanations or text outside the JSON array.
         """
 
         print("DEBUG: Created system prompt")
 
-        # Generate questions with error handling
-        print("DEBUG: Calling Gemini API for question generation")
-        try:
-            response = model.generate_content(
-                [
-                    {
-                        "role": "user",
-                        "parts": [
-                            {
-                                "text": f"{system_prompt}\n\nText to analyze:\n{full_text}"
-                            }
-                        ],
-                    },
-                ]
+        # Attempt to generate and parse questions with retries
+        max_attempts = 3
+        questions_json = None
+        last_error = None
+        last_response_text = None
+
+        for attempt in range(1, max_attempts + 1):
+            print(f"DEBUG: Attempt {attempt} to generate questions")
+            try:
+                # Generate questions with Gemini API
+                response = model.generate_content(
+                    [
+                        {
+                            "role": "user",
+                            "parts": [
+                                {
+                                    "text": f"{system_prompt}\n\nText to analyze:\n{full_text}"
+                                }
+                            ],
+                        },
+                    ]
+                )
+
+                response_text = response.text
+                last_response_text = response_text
+                print(
+                    f"DEBUG: Received response from Gemini API (Length: {len(response_text)} chars)"
+                )
+
+                # Parse JSON from response
+                # Try to extract JSON from markdown codeblocks if present
+                import json
+                import re
+
+                # Look for JSON in code blocks
+                json_pattern = r"```(?:json)?\s*([\s\S]*?)```"
+                match = re.search(json_pattern, response_text)
+
+                if match:
+                    # If we found a code block, extract the content
+                    json_content = match.group(1).strip()
+                    print(f"DEBUG: Extracted JSON from code block")
+                else:
+                    # Otherwise use the raw text
+                    json_content = response_text.strip()
+                    print(f"DEBUG: Using raw text as JSON")
+
+                # Clean up common formatting issues
+                json_content = json_content.replace("questin_text", "question_text")
+                json_content = json_content.replace("catergory", "category")
+                json_content = json_content.replace("diffculty", "difficulty")
+                json_content = json_content.replace("difficutly", "difficulty")
+
+                # Try parsing the cleaned JSON
+                questions_json = json.loads(json_content)
+                print(
+                    f"DEBUG: Successfully parsed JSON with {len(questions_json)} questions"
+                )
+
+                # Validate parsed JSON
+                if not isinstance(questions_json, list) or len(questions_json) == 0:
+                    raise ValueError("Response is not a valid list of questions")
+
+                # Validate each question has required fields
+                for idx, q in enumerate(questions_json):
+                    if not isinstance(q, dict):
+                        raise ValueError(f"Question {idx} is not a valid object")
+
+                    # Check required fields
+                    required_fields = ["question_text", "category", "difficulty"]
+                    for field in required_fields:
+                        if field not in q:
+                            raise ValueError(
+                                f"Question {idx} is missing required field: {field}"
+                            )
+
+                # If we get here, JSON is valid
+                break
+
+            except Exception as e:
+                last_error = str(e)
+                print(f"DEBUG ERROR: Attempt {attempt} - {last_error}")
+
+                # If not the last attempt, try again with stronger formatting instructions
+                if attempt < max_attempts:
+                    system_prompt += f"""
+                    
+                    IMPORTANT: Your previous response had formatting issues. Please ensure:
+                    1. You return ONLY valid JSON
+                    2. All field names are exact: "question_text", "category", "difficulty"
+                    3. No additional explanatory text
+                    4. No markdown formatting except for the JSON itself
+                    """
+
+        # If we still don't have valid questions after max attempts
+        if questions_json is None:
+            error_message = (
+                f"Failed to generate valid questions after {max_attempts} attempts. "
+                f"Last error: {last_error}. Please return to your dashboard and try the completion test again."
             )
-            print("DEBUG: Received response from Gemini API")
-        except Exception as e:
-            print(f"DEBUG ERROR: Gemini API call failed: {str(e)}")
+            print(f"DEBUG ERROR: Final failure - {error_message}")
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Error generating questions with Gemini API: {str(e)}",
-            )
-
-        # Parse the response to get questions
-        print("DEBUG: Parsing Gemini response")
-        try:
-            import json
-            import re
-
-            # Extract JSON content from potential markdown code blocks
-            # Look for content between triple backticks
-            response_text = response.text
-            json_pattern = r"```(?:json)?\s*([\s\S]*?)```"
-            match = re.search(json_pattern, response_text)
-
-            if match:
-                # If we found a code block, extract the content
-                json_content = match.group(1).strip()
-                print(f"DEBUG: Extracted JSON from code block: {json_content[:100]}...")
-            else:
-                # Otherwise use the raw text
-                json_content = response_text
-
-            # Parse JSON content
-            questions_json = json.loads(json_content)
-            print(f"DEBUG: Parsed {len(questions_json)} questions from response")
-        except Exception as e:
-            print(f"DEBUG ERROR: JSON parsing failed: {str(e)}")
-            print(f"DEBUG ERROR: Response text: {response.text}")
-
-            # More detailed error message with parsing attempt
-            error_detail = (
-                f"Error parsing Gemini response: {str(e)}\n"
-                f"Response: {response.text}\n\n"
-                "This may be due to unexpected formatting in the model response."
-            )
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=error_detail,
+                detail=error_message,
             )
 
         # Create CompletionQuestion records
