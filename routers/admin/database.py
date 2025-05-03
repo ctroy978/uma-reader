@@ -254,7 +254,8 @@ async def delete_record(
             detail=f"Table '{table_name}' not found or not manageable",
         )
 
-    model_class = MANAGEABLE_TABLES[table_name]
+    # Get model class for the requested table
+    model_class = MANAGEABLE_TABLES[table_name]  # This needs to be here!
 
     try:
         # Find the record
@@ -266,7 +267,44 @@ async def delete_record(
                 detail=f"Record with ID {record_id} not found in {table_name}",
             )
 
-        # Handle deletion based on type
+        # Handle special case for completions with hard delete
+        if table_name == "completions" and hard_delete:
+            from datetime import datetime, timezone  # Import datetime for timestamp
+
+            # Store the necessary info before deleting
+            student_id = record.student_id
+            text_id = record.text_id
+            assessment_id = record.assessment_id
+            final_test_level = record.final_test_level
+            final_test_difficulty = record.final_test_difficulty
+
+            # Delete associated questions
+            db.query(CompletionQuestion).filter(
+                CompletionQuestion.completion_id == record_id
+            ).delete()
+
+            # Delete the record
+            db.delete(record)
+
+            # Create a new pending completion record
+            new_completion = Completion(
+                student_id=student_id,
+                text_id=text_id,
+                assessment_id=assessment_id,
+                final_test_level=final_test_level,
+                final_test_difficulty=final_test_difficulty,
+                test_status="pending",
+                completion_triggered_at=datetime.now(timezone.utc),
+            )
+
+            db.add(new_completion)
+            db.commit()
+
+            return {
+                "message": f"Record {record_id} successfully deleted and reset for retake. New completion ID: {new_completion.id}"
+            }
+
+        # Handle regular delete cases
         if hard_delete:
             # Hard delete
             db.delete(record)
